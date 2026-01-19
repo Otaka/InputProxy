@@ -142,11 +142,62 @@ int main() {
         TinyUsbGamepadBuilder gamepadBuilder;
         std::string gamepadName = "InputProxy Gamepad " + std::to_string(i + 1);
         
+        //work correctly
+        // gamepadBuilder.gamepadIndex(i)
+        //               .name(gamepadName)
+        //               .buttons(1)
+        //               .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+        //               .hat(true);
+        //not working
+        // gamepadBuilder.gamepadIndex(i)
+        //               .name(gamepadName)
+        //               .buttons(0)
+        //               .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+        //               .hat(true);
+        
+        //working - 16 buttons, hat, 2 axes
+        // gamepadBuilder.gamepadIndex(i)
+        //               .name(gamepadName)
+        //               .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+        //               .hat(true);
+        
+        //working, no axes 17 buttons, no hat
+        // gamepadBuilder.gamepadIndex(i)
+        //               .name(gamepadName)
+        //               .hat(true);
+
+        //not working
+        // gamepadBuilder.gamepadIndex(i)
+        //                .name(gamepadName)
+        //                .buttons(0)
+        //                .hat(true);
+        
+        //working 2 buttons, no hat
+        // gamepadBuilder.gamepadIndex(i)
+        //                .name(gamepadName)
+        //                .buttons(1)
+        //                .hat(true);
+        
+        // working 1 button, no hat
+        // gamepadBuilder.gamepadIndex(i)
+        //                .name(gamepadName)
+        //                .buttons(1)
+        //                .hat(false);
+
+        // not working
+        // gamepadBuilder.gamepadIndex(i)
+        //                .name(gamepadName)
+        //                .buttons(0)
+        //                .hat(false);
+        
+        // not working
         gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .buttons(1)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
-                      .hat(true); 
+                       .name(gamepadName)
+                       .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                       .buttons(0)
+                       .hat(false);
+
+
         /*else if (i==1) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
