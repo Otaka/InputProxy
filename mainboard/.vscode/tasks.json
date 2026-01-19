@@ -1,0 +1,26 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake --build ${workspaceFolder}/build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "deploy-and-run-gdbserver",
+            "type": "shell",
+            "command": "rsync -avz ${workspaceFolder}/build/app ${config:raspberrypi.user}@${config:raspberrypi.host}:/home/${config:raspberrypi.user}/app && ssh ${config:raspberrypi.user}@${config:raspberrypi.host} 'chmod +x ~/app && gdbserver :1234 ~/app'",
+            "problemMatcher": [],
+            "dependsOn": ["build"]
+        }
+    ]
+}
