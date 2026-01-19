@@ -105,32 +105,35 @@ void TinyUsbGamepadDevice::buildHidDescriptor() {
     *p++ = 0x85; *p++ = REPORT_ID_GAMEPAD;
 
     // === Buttons ===
-    // Usage Page (Button)
-    *p++ = 0x05; *p++ = 0x09;
-    // Usage Minimum (1)
-    *p++ = 0x19; *p++ = 0x01;
-    // Usage Maximum (numButtons)
-    *p++ = 0x29; *p++ = numButtons;
-    // Logical Minimum (0)
-    *p++ = 0x15; *p++ = 0x00;
-    // Logical Maximum (1)
-    *p++ = 0x25; *p++ = 0x01;
-    // Report Count (numButtons)
-    *p++ = 0x95; *p++ = numButtons;
-    // Report Size (1)
-    *p++ = 0x75; *p++ = 0x01;
-    // Input (Data, Variable, Absolute)
-    *p++ = 0x81; *p++ = 0x02;
-
-    // Padding if buttons don't fill complete bytes
-    uint8_t paddingBits = (8 - (numButtons % 8)) % 8;
-    if (paddingBits > 0) {
-        // Report Count (padding)
-        *p++ = 0x95; *p++ = paddingBits;
+    // Only include button section if numButtons > 0
+    if (numButtons > 0) {
+        // Usage Page (Button)
+        *p++ = 0x05; *p++ = 0x09;
+        // Usage Minimum (1)
+        *p++ = 0x19; *p++ = 0x01;
+        // Usage Maximum (numButtons)
+        *p++ = 0x29; *p++ = numButtons;
+        // Logical Minimum (0)
+        *p++ = 0x15; *p++ = 0x00;
+        // Logical Maximum (1)
+        *p++ = 0x25; *p++ = 0x01;
+        // Report Count (numButtons)
+        *p++ = 0x95; *p++ = numButtons;
         // Report Size (1)
         *p++ = 0x75; *p++ = 0x01;
-        // Input (Constant)
-        *p++ = 0x81; *p++ = 0x01;
+        // Input (Data, Variable, Absolute)
+        *p++ = 0x81; *p++ = 0x02;
+
+        // Padding if buttons don't fill complete bytes
+        uint8_t paddingBits = (8 - (numButtons % 8)) % 8;
+        if (paddingBits > 0) {
+            // Report Count (padding)
+            *p++ = 0x95; *p++ = paddingBits;
+            // Report Size (1)
+            *p++ = 0x75; *p++ = 0x01;
+            // Input (Constant)
+            *p++ = 0x81; *p++ = 0x01;
+        }
     }
 
     // === Axes ===
@@ -328,9 +331,36 @@ void TinyUsbGamepadDevice::update() {
 }
 
 void TinyUsbGamepadDevice::sendReport() {
-    // Send only the configured report size (not the full structure)
-    // The report ID is passed separately, TinyUSB handles prepending it
-    tud_hid_n_report(getInterfaceNum(), REPORT_ID_GAMEPAD, &report, reportSize);
+    // Build report buffer matching the HID descriptor layout exactly
+    uint8_t reportBuffer[64];  // Max possible report size
+    uint8_t* p = reportBuffer;
+    
+    // Buttons section (only if numButtons > 0)
+    if (numButtons > 0) {
+        uint8_t buttonBytes = (numButtons + 7) / 8;
+        // Copy button bytes from the buttons bitfield
+        memcpy(p, &report.buttons, buttonBytes);
+        p += buttonBytes;
+    }
+    
+    // Axes section (only enabled axes)
+    uint8_t numEnabledAxes = getNumAxes();
+    if (numEnabledAxes > 0) {
+        uint8_t axisIndex = 0;
+        for (int i = 0; i < 8; i++) {
+            if (axesBitMask & (1 << i)) {
+                *p++ = report.axes[i];
+            }
+        }
+    }
+    
+    // Hat section (only if hasHat)
+    if (hasHat) {
+        *p++ = report.hat;
+    }
+    
+    // Send the properly formatted report
+    tud_hid_n_report(getInterfaceNum(), REPORT_ID_GAMEPAD, reportBuffer, reportSize);
     reportChanged = false;
 }
 
