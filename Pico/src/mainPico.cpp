@@ -138,38 +138,36 @@ int main() {
                              mouseBuilder.getName(), mouseBuilder.getDeviceType());
     
     // Sockets 2-5: 4 Gamepads
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 4; i++) {
         TinyUsbGamepadBuilder gamepadBuilder;
         std::string gamepadName = "InputProxy Gamepad " + std::to_string(i + 1);
         if(i==0){
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      //.axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
-                      .buttons(10)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
+                      .buttons(1)
                       .hat(true); 
             
         } else if (i==1) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
                       .buttons(1)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
-                      .hat(true);
-        } 
-        /*else if (i==2) {
+                      .hat(true); 
+        } else if (i==2) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      .buttons(4)
-                      .hat(false);
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
+                      .buttons(1)
+                      .hat(true); 
         } else {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      .buttons(16)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | 
-                            FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY |
-                            FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
+                      .buttons(1)
                       .hat(true);
         }
-*/
+
         //work correctly
         // gamepadBuilder.gamepadIndex(i)
         //               .name(gamepadName)

@@ -385,7 +385,33 @@ uint16_t TinyUsbGamepadDevice::getReport(uint8_t report_id, hid_report_type_t re
         if (reqlen < reportSize) {
             return 0;
         }
-        memcpy(buffer, &report, reportSize);
+
+        // Build packed report matching HID descriptor (same as sendReport)
+        uint8_t* p = buffer;
+
+        // Buttons section (only if numButtons > 0)
+        if (numButtons > 0) {
+            uint8_t buttonBytes = (numButtons + 7) / 8;
+            memcpy(p, &report.buttons, buttonBytes);
+            p += buttonBytes;
+        }
+
+        // Axes section (only enabled axes, stored sequentially in report.axes)
+        uint8_t numEnabledAxes = getNumAxes();
+        if (numEnabledAxes > 0) {
+            uint8_t reportIndex = 0;
+            for (int i = 0; i < 8; i++) {
+                if (axesBitMask & (1 << i)) {
+                    *p++ = report.axes[reportIndex++];
+                }
+            }
+        }
+
+        // Hat section (only if hasHat)
+        if (hasHat) {
+            *p++ = report.hat;
+        }
+
         return reportSize;
     }
     return 0;
