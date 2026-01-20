@@ -163,6 +163,8 @@ void TinyUsbGamepadDevice::buildHidDescriptor() {
 
     // === Hat Switch ===
     if (hasHat) {
+        // Usage Page (Generic Desktop) - required for Hat Switch
+        *p++ = 0x05; *p++ = 0x01;
         // Usage (Hat Switch)
         *p++ = 0x09; *p++ = 0x39;
         // Logical Minimum (0)
@@ -343,13 +345,13 @@ void TinyUsbGamepadDevice::sendReport() {
         p += buttonBytes;
     }
     
-    // Axes section (only enabled axes)
+    // Axes section (only enabled axes, stored sequentially in report.axes)
     uint8_t numEnabledAxes = getNumAxes();
     if (numEnabledAxes > 0) {
-        uint8_t axisIndex = 0;
+        uint8_t reportIndex = 0;
         for (int i = 0; i < 8; i++) {
             if (axesBitMask & (1 << i)) {
-                *p++ = report.axes[i];
+                *p++ = report.axes[reportIndex++];
             }
         }
     }

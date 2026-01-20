@@ -138,22 +138,45 @@ int main() {
                              mouseBuilder.getName(), mouseBuilder.getDeviceType());
     
     // Sockets 2-5: 4 Gamepads
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 2; i++) {
         TinyUsbGamepadBuilder gamepadBuilder;
         std::string gamepadName = "InputProxy Gamepad " + std::to_string(i + 1);
-        
+        if(i==0){
+            gamepadBuilder.gamepadIndex(i)
+                      .name(gamepadName)
+                      //.axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
+                      .buttons(10)
+                      .hat(true); 
+            
+        } else if (i==1) {
+            gamepadBuilder.gamepadIndex(i)
+                      .name(gamepadName)
+                      .buttons(1)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .hat(true);
+        } 
+        /*else if (i==2) {
+            gamepadBuilder.gamepadIndex(i)
+                      .name(gamepadName)
+                      .buttons(4)
+                      .hat(false);
+        } else {
+            gamepadBuilder.gamepadIndex(i)
+                      .name(gamepadName)
+                      .buttons(16)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | 
+                            FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY |
+                            FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .hat(true);
+        }
+*/
         //work correctly
         // gamepadBuilder.gamepadIndex(i)
         //               .name(gamepadName)
         //               .buttons(1)
         //               .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
         //               .hat(true);
-        //not working
-        gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .buttons(0)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
-                      .hat(true);
+        //working
         
         // working - 16 buttons, hat, 2 axes
         // gamepadBuilder.gamepadIndex(i)
@@ -198,28 +221,10 @@ int main() {
         //                .hat(true);
 
 
-        /*else if (i==1) {
-            gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .buttons(10)
-                      .hat(true);
-        } else if (i==2) {
-            gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .buttons(4)
-                      .hat(false);
-        } else {
-            gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .buttons(16)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | 
-                            FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY |
-                            FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
-                      .hat(true);
-        }*/
         
-        deviceManager->plugDevice(2 + i, gamepadBuilder.build(), 
-                                 gamepadBuilder.getName(), 
+        
+        deviceManager->plugDevice(2 + i, gamepadBuilder.build(),
+                                 gamepadBuilder.getName(),
                                  gamepadBuilder.getDeviceType(),
                                  gamepadBuilder.getAxesCount());
     }

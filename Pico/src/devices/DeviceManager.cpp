@@ -2,6 +2,7 @@
 #include "TinyUsbGamepadDevice.h"
 #include "tusb.h"
 #include <cstring>
+#include <algorithm>
 
 // Global DeviceManager instance for TinyUSB callbacks
 static DeviceManager* g_deviceManager = nullptr;
@@ -216,23 +217,17 @@ void DeviceManager::generateConfigurationDescriptor() {
     
     configDescriptorBuffer.insert(configDescriptorBuffer.end(), configHeader, configHeader + sizeof(configHeader));
 
-    // Separate devices by type
-    std::vector<const UsbDevice*> keyboards;
-    std::vector<const UsbDevice*> mice;
-    std::vector<const UsbDevice*> gamepads;
-
+    // Collect all occupied devices and sort by interface number (USB spec requires ascending order)
+    std::vector<const UsbDevice*> devices;
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
-        if (!deviceSockets[i].occupied) continue;
-        
-        const UsbDevice* info = &deviceSockets[i];
-        if (info->deviceType == DeviceType::KEYBOARD) {
-            keyboards.push_back(info);
-        } else if (info->deviceType == DeviceType::MOUSE) {
-            mice.push_back(info);
-        } else if (info->deviceType == DeviceType::GAMEPAD) {
-            gamepads.push_back(info);
+        if (deviceSockets[i].occupied) {
+            devices.push_back(&deviceSockets[i]);
         }
     }
+    // Sort by interface number
+    std::sort(devices.begin(), devices.end(), [](const UsbDevice* a, const UsbDevice* b) {
+        return a->interfaceNum < b->interfaceNum;
+    });
 
     // Helper lambda to add device descriptor
     auto addDeviceDescriptor = [&](const UsbDevice* info) {
@@ -286,16 +281,9 @@ void DeviceManager::generateConfigurationDescriptor() {
         configDescriptorBuffer.insert(configDescriptorBuffer.end(), hidDesc, hidDesc + sizeof(hidDesc));
     };
 
-    // Add descriptors in order: keyboards, mice, then gamepads in REVERSE order
-    for (const auto* dev : keyboards) {
+    // Add descriptors in interface number order (already sorted)
+    for (const auto* dev : devices) {
         addDeviceDescriptor(dev);
-    }
-    for (const auto* dev : mice) {
-        addDeviceDescriptor(dev);
-    }
-    // Add gamepads in reverse order to fix Windows enumeration
-    for (auto it = gamepads.rbegin(); it != gamepads.rend(); ++it) {
-        addDeviceDescriptor(*it);
     }
 }
 
@@ -321,13 +309,11 @@ const uint8_t* DeviceManager::getDeviceReportDescriptor(uint8_t interfaceNum, ui
         if (length) *length = hid_report_descriptor_mouse_size;
         return hid_report_descriptor_mouse;
     } else if (info->deviceType == DeviceType::GAMEPAD) {
-        // Get descriptor from gamepad instance
+        // Get descriptor directly from gamepad instance (each has its own buffer)
         TinyUsbGamepadDevice* gamepad = static_cast<TinyUsbGamepadDevice*>(info->device);
         if (gamepad) {
-            static uint8_t descriptorBuffer[256];  // Static buffer for descriptor
-            uint16_t descLen = gamepad->getReportDescriptor(descriptorBuffer, sizeof(descriptorBuffer));
-            if (length) *length = descLen;
-            return descriptorBuffer;
+            if (length) *length = gamepad->getHidDescriptorSize();
+            return gamepad->getHidDescriptor();
         }
     }
     

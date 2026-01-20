@@ -92,6 +92,7 @@ public:
     uint8_t getNumAxes() const;  // Count of enabled axes
     bool getHasHat() const { return hasHat; }
     uint16_t getHidDescriptorSize() const { return hidDescriptorSize; }
+    const uint8_t* getHidDescriptor() const { return hidDescriptor; }
 
 private:
     // Packed report structure matching the HID descriptor exactly
