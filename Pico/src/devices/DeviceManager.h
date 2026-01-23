@@ -90,9 +90,6 @@ public:
 
 private:
     UsbDevice deviceSockets[MAX_DEVICE_SOCKETS];  // Fixed-size array of device sockets
-    uint8_t nextInterfaceNum;
-    uint8_t nextEndpointNum;
-    uint8_t nextStringIndex;  // Next available string descriptor index
 
     // USB device-level properties (apply to entire composite device)
     uint16_t m_vendorId;
@@ -103,12 +100,12 @@ private:
 
     // Buffer for dynamic configuration descriptor
     std::vector<uint8_t> configDescriptorBuffer;
-    
+
     // Generate USB configuration descriptor
     void generateConfigurationDescriptor();
-    
-    // Helper to allocate next interface and endpoint numbers
-    void allocateInterface(UsbDevice& info);
+
+    // Helper to allocate interface and endpoint numbers based on socket index
+    void allocateInterface(UsbDevice& info, uint8_t socketIndex);
     
     // Cleanup a device
     void cleanupDevice(UsbDevice& info);

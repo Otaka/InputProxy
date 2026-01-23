@@ -27,8 +27,7 @@ extern "C" {
 #define FIRST_INTERFACE_STRING_INDEX 4
 
 DeviceManager::DeviceManager()
-    : nextInterfaceNum(0), nextEndpointNum(0x81), nextStringIndex(FIRST_INTERFACE_STRING_INDEX),
-      m_vendorId(0x1209),           // Default: pid.codes (open source VID)
+    : m_vendorId(0x1209),           // Default: pid.codes (open source VID)
       m_productId(0x0003),          // Default: Custom PID
       m_manufacturer("InputProxy"),
       m_productName("InputProxy Keyboard, Mouse & 4 Gamepads"),
@@ -78,10 +77,16 @@ DeviceManager::~DeviceManager() {
     }
 }
 
-void DeviceManager::allocateInterface(UsbDevice& info) {
-    info.interfaceNum = nextInterfaceNum++;
-    info.endpointNum = nextEndpointNum++;
-    info.stringIndex = nextStringIndex++;
+void DeviceManager::allocateInterface(UsbDevice& info, uint8_t socketIndex) {
+    // Assign interface numbers based on socket index for deterministic allocation
+    // Socket 0 → Interface 0, Socket 1 → Interface 1, etc.
+    info.interfaceNum = socketIndex;
+
+    // Endpoint numbers: 0x81, 0x82, 0x83, etc. (IN endpoints)
+    info.endpointNum = 0x81 + socketIndex;
+
+    // String descriptor indices: start after reserved indices (0-3)
+    info.stringIndex = FIRST_INTERFACE_STRING_INDEX + socketIndex;
 }
 
 void DeviceManager::cleanupDevice(UsbDevice& info) {
@@ -114,13 +119,13 @@ bool DeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* devic
     info.deviceType = deviceType;
     info.axesCount = axesCount;
     info.occupied = true;
-    
-    // Allocate USB resources
-    allocateInterface(info);
-    
+
+    // Allocate USB resources based on socket index
+    allocateInterface(info, socketIndex);
+
     // Regenerate USB descriptors
     generateConfigurationDescriptor();
-    
+
     return true;
 }
 

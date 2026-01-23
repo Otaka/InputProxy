@@ -129,7 +129,7 @@ int main() {
     deviceManager->vendorId(0x1209)           // pid.codes (open source VID)
                  .productId(0x0003)          // Custom PID
                  .manufacturer("InputProxy")
-                 .productName("InputProxy Keyboard, Mouse & 4 Gamepads")
+                 .productName("InputProxy Composite Device")
                  .serialNumber("20260118");
 
     setDeviceManager(deviceManager);
