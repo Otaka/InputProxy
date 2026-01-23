@@ -36,6 +36,20 @@ public:
     DeviceManager();
     ~DeviceManager();
 
+    // USB device-level configuration (VID/PID/Serial apply to entire composite device)
+    DeviceManager& vendorId(uint16_t vid);
+    DeviceManager& productId(uint16_t pid);
+    DeviceManager& manufacturer(const std::string& name);
+    DeviceManager& productName(const std::string& name);
+    DeviceManager& serialNumber(const std::string& serial);
+
+    // Getters for USB descriptors
+    uint16_t getVendorId() const { return m_vendorId; }
+    uint16_t getProductId() const { return m_productId; }
+    const std::string& getManufacturer() const { return m_manufacturer; }
+    const std::string& getProductName() const { return m_productName; }
+    const std::string& getSerialNumber() const { return m_serialNumber; }
+
     // Socket-based device management
     // Plug a device into a specific socket (0-7)
     // Returns true if successful, false if socket is occupied or index is invalid
@@ -79,6 +93,13 @@ private:
     uint8_t nextInterfaceNum;
     uint8_t nextEndpointNum;
     uint8_t nextStringIndex;  // Next available string descriptor index
+
+    // USB device-level properties (apply to entire composite device)
+    uint16_t m_vendorId;
+    uint16_t m_productId;
+    std::string m_manufacturer;
+    std::string m_productName;
+    std::string m_serialNumber;
 
     // Buffer for dynamic configuration descriptor
     std::vector<uint8_t> configDescriptorBuffer;

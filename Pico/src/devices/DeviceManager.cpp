@@ -27,7 +27,12 @@ extern "C" {
 #define FIRST_INTERFACE_STRING_INDEX 4
 
 DeviceManager::DeviceManager()
-    : nextInterfaceNum(0), nextEndpointNum(0x81), nextStringIndex(FIRST_INTERFACE_STRING_INDEX) {
+    : nextInterfaceNum(0), nextEndpointNum(0x81), nextStringIndex(FIRST_INTERFACE_STRING_INDEX),
+      m_vendorId(0x1209),           // Default: pid.codes (open source VID)
+      m_productId(0x0003),          // Default: Custom PID
+      m_manufacturer("InputProxy"),
+      m_productName("InputProxy Keyboard, Mouse & 4 Gamepads"),
+      m_serialNumber("20260118") {
     // Initialize all sockets as empty
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         deviceSockets[i].occupied = false;
@@ -37,6 +42,31 @@ DeviceManager::DeviceManager()
         deviceSockets[i].stringIndex = 0;
         deviceSockets[i].axesCount = 0;
     }
+}
+
+DeviceManager& DeviceManager::vendorId(uint16_t vid) {
+    m_vendorId = vid;
+    return *this;
+}
+
+DeviceManager& DeviceManager::productId(uint16_t pid) {
+    m_productId = pid;
+    return *this;
+}
+
+DeviceManager& DeviceManager::manufacturer(const std::string& name) {
+    m_manufacturer = name;
+    return *this;
+}
+
+DeviceManager& DeviceManager::productName(const std::string& name) {
+    m_productName = name;
+    return *this;
+}
+
+DeviceManager& DeviceManager::serialNumber(const std::string& serial) {
+    m_serialNumber = serial;
+    return *this;
 }
 
 DeviceManager::~DeviceManager() {
@@ -350,8 +380,8 @@ enum {
     STRID_SERIAL,
 };
 
-// Device Descriptor
-tusb_desc_device_t const desc_device = {
+// Dynamic Device Descriptor - updated with DeviceManager values
+static tusb_desc_device_t desc_device = {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
     .bcdUSB             = 0x0200,  // USB 2.0
@@ -359,8 +389,8 @@ tusb_desc_device_t const desc_device = {
     .bDeviceSubClass    = 0x00,
     .bDeviceProtocol    = 0x00,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
-    .idVendor           = 0x1209,  // pid.codes (open source VID)
-    .idProduct          = 0x0003,  // Custom PID (changed to force new device in Windows)
+    .idVendor           = 0x1209,  // Default: pid.codes (open source VID)
+    .idProduct          = 0x0003,  // Default: Custom PID
     .bcdDevice          = 0x0200,  // Device version 2.0
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
@@ -370,6 +400,12 @@ tusb_desc_device_t const desc_device = {
 
 // Invoked when received GET DEVICE DESCRIPTOR
 uint8_t const * tud_descriptor_device_cb(void) {
+    // Update device descriptor with DeviceManager values
+    DeviceManager* manager = getDeviceManager();
+    if (manager) {
+        desc_device.idVendor = manager->getVendorId();
+        desc_device.idProduct = manager->getProductId();
+    }
     return (uint8_t const *) &desc_device;
 }
 
@@ -390,13 +426,8 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
     return nullptr;
 }
 
-// String descriptors array (indices 0-3 are fixed)
-char const* string_desc_arr[] = {
-    (const char[]) { 0x09, 0x04 },        // 0: Language (English)
-    "InputProxy",                          // 1: Manufacturer
-    "InputProxy Keyboard, Mouse & 4 Gamepads",  // 2: Product
-    "20260118",                            // 3: Serial Number (changed to force Windows re-enumeration)
-};
+// Language descriptor (index 0)
+static const char language_desc[] = { 0x09, 0x04 };  // English (US)
 
 static uint16_t _desc_str[64];
 
@@ -408,11 +439,20 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     const char* str = NULL;
 
     if (index == 0) {
-        memcpy(&_desc_str[1], string_desc_arr[0], 2);
+        memcpy(&_desc_str[1], language_desc, 2);
         chr_count = 1;
-    } else if (index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) {
-        // Fixed string descriptors (manufacturer, product, serial)
-        str = string_desc_arr[index];
+    } else if (index == STRID_MANUFACTURER) {
+        // Manufacturer string from DeviceManager
+        DeviceManager* manager = getDeviceManager();
+        str = manager ? manager->getManufacturer().c_str() : "InputProxy";
+    } else if (index == STRID_PRODUCT) {
+        // Product string from DeviceManager
+        DeviceManager* manager = getDeviceManager();
+        str = manager ? manager->getProductName().c_str() : "InputProxy Device";
+    } else if (index == STRID_SERIAL) {
+        // Serial string from DeviceManager
+        DeviceManager* manager = getDeviceManager();
+        str = manager ? manager->getSerialNumber().c_str() : "000000";
     } else {
         // Dynamic interface string descriptors
         DeviceManager* manager = getDeviceManager();

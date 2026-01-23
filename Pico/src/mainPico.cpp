@@ -124,6 +124,14 @@ int main() {
 
     // Create and initialize Device Manager
     deviceManager = new DeviceManager();
+
+    // Configure USB device-level properties (VID/PID/Serial)
+    deviceManager->vendorId(0x1209)           // pid.codes (open source VID)
+                 .productId(0x0003)          // Custom PID
+                 .manufacturer("InputProxy")
+                 .productName("InputProxy Keyboard, Mouse & 4 Gamepads")
+                 .serialNumber("20260118");
+
     setDeviceManager(deviceManager);
 
     // Add devices using DeviceManager with builder pattern
@@ -141,7 +149,7 @@ int main() {
     for (int i = 0; i < 4; i++) {
         TinyUsbGamepadBuilder gamepadBuilder;
         std::string gamepadName = "InputProxy Gamepad " + std::to_string(i + 1);
-        if(i==0){
+        if(i==0) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
                       .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
@@ -217,10 +225,6 @@ int main() {
         //                .axes(FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RZ)
         //                .buttons(0)
         //                .hat(true);
-
-
-        
-        
         deviceManager->plugDevice(2 + i, gamepadBuilder.build(),
                                  gamepadBuilder.getName(),
                                  gamepadBuilder.getDeviceType(),
