@@ -226,13 +226,46 @@ void TinyUsbGamepadDevice::setAxis(int code, int value) {
         return;
     }
 
-    // Axes (codes 100-107)
+    // Axes (codes 100-107) - Full range
     if (code >= GAMEPAD_AXIS_LX && code <= GAMEPAD_AXIS_SLIDER) {
-        uint8_t reportIndex = getAxisReportIndex(static_cast<uint8_t>(code));
-        if (reportIndex != 0xFF) {
+        // Map axis code to base axis index (0-7)
+        uint8_t baseAxisIndex = code - GAMEPAD_AXIS_LX;
+        int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
+        if (reportIndex >= 0) {
             // Scale 0-1000 to 0-255
             uint8_t scaledValue = static_cast<uint8_t>((value * 255) / 1000);
-            setAxisValue(reportIndex, scaledValue);
+            setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
+        }
+        return;
+    }
+
+    // Axes MINUS codes (110-124, even numbers) - Negative direction (0-127)
+    if (code >= GAMEPAD_AXIS_LX_MINUS && code <= GAMEPAD_AXIS_SLIDER_MINUS) {
+        // Determine which base axis this corresponds to
+        uint8_t baseAxisIndex = (code - GAMEPAD_AXIS_LX_MINUS) / 2;
+        if (baseAxisIndex < 8) {
+            int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
+            if (reportIndex >= 0) {
+                // Scale 0-1000 to 0-127 (negative direction)
+                uint8_t scaledValue = static_cast<uint8_t>((value * 127) / 1000);
+                setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
+            }
+        }
+        return;
+    }
+
+    // Axes PLUS codes (111-125, odd numbers) - Positive direction (127-255)
+    if (code >= GAMEPAD_AXIS_LX_PLUS && code <= GAMEPAD_AXIS_SLIDER_PLUS) {
+        // Determine which base axis this corresponds to
+        uint8_t baseAxisIndex = (code - GAMEPAD_AXIS_LX_PLUS) / 2;
+        if (baseAxisIndex < 8) {
+            int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
+            if (reportIndex >= 0) {
+                // Scale 0-1000 to 127-255 (positive direction)
+                // Map: 0->127, 1000->255 (range of 128 values)
+                uint8_t scaledValue = 127 + static_cast<uint8_t>((value * 128) / 1000);
+                setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
+            }
         }
         return;
     }

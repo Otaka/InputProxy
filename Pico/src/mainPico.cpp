@@ -152,27 +152,27 @@ int main() {
         if(i==0) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
-                      .buttons(1)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .buttons(32)
                       .hat(true); 
             
         } else if (i==1) {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
-                      .buttons(1)
-                      .hat(true); 
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .buttons(32)
+                      .hat(true);
         } else if (i==2) {
             gamepadBuilder.gamepadIndex(i)
-                      .name(gamepadName)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
-                      .buttons(1)
-                      .hat(true); 
+                     .name(gamepadName)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .buttons(32)
+                      .hat(true);
         } else {
             gamepadBuilder.gamepadIndex(i)
                       .name(gamepadName)
-                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY)
-                      .buttons(1)
+                      .axes(FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY | FLAG_MASK_GAMEPAD_AXIS_LZ | FLAG_MASK_GAMEPAD_AXIS_RX | FLAG_MASK_GAMEPAD_AXIS_RY | FLAG_MASK_GAMEPAD_AXIS_RZ)
+                      .buttons(32)
                       .hat(true);
         }
 

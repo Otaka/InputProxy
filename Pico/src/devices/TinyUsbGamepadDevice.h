@@ -29,15 +29,48 @@
 #define FLAG_MASK_GAMEPAD_AXIS_SLIDER 0x80  // Bit 7: Slider
 
 // Gamepad axis codes (for setAxis)
-// Values are 0-1000, mapped to 0-255 for HID
-#define GAMEPAD_AXIS_LX     100  // Left stick X
-#define GAMEPAD_AXIS_LY     101  // Left stick Y
-#define GAMEPAD_AXIS_LZ     102  // Left stick Z
-#define GAMEPAD_AXIS_RX     103  // Right stick X
-#define GAMEPAD_AXIS_RY     104  // Right stick Y
-#define GAMEPAD_AXIS_RZ     105  // Right stick Z
-#define GAMEPAD_AXIS_DIAL   106  // Dial
-#define GAMEPAD_AXIS_SLIDER 107  // Slider
+// Values are 0-1000, mapped to 0-255 for HID (with 127/500 as center for bidirectional axes)
+// For bidirectional axes, MINUS sets 0-127 range, PLUS sets 127-255 range
+
+// Left stick X (bidirectional)
+#define GAMEPAD_AXIS_LX        100  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_LX_MINUS  110  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_LX_PLUS   111  // Positive direction: 0-1000 -> 127-255
+
+// Left stick Y (bidirectional)
+#define GAMEPAD_AXIS_LY        101  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_LY_MINUS  112  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_LY_PLUS   113  // Positive direction: 0-1000 -> 127-255
+
+// Left stick Z (bidirectional)
+#define GAMEPAD_AXIS_LZ        102  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_LZ_MINUS  114  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_LZ_PLUS   115  // Positive direction: 0-1000 -> 127-255
+
+// Right stick X (bidirectional)
+#define GAMEPAD_AXIS_RX        103  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_RX_MINUS  116  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_RX_PLUS   117  // Positive direction: 0-1000 -> 127-255
+
+// Right stick Y (bidirectional)
+#define GAMEPAD_AXIS_RY        104  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_RY_MINUS  118  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_RY_PLUS   119  // Positive direction: 0-1000 -> 127-255
+
+// Right stick Z (bidirectional)
+#define GAMEPAD_AXIS_RZ        105  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_RZ_MINUS  120  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_RZ_PLUS   121  // Positive direction: 0-1000 -> 127-255
+
+// Dial (bidirectional)
+#define GAMEPAD_AXIS_DIAL        106  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_DIAL_MINUS  122  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_DIAL_PLUS   123  // Positive direction: 0-1000 -> 127-255
+
+// Slider (bidirectional)
+#define GAMEPAD_AXIS_SLIDER        107  // Full range: 0-1000 -> 0-255
+#define GAMEPAD_AXIS_SLIDER_MINUS  124  // Negative direction: 0-1000 -> 0-127
+#define GAMEPAD_AXIS_SLIDER_PLUS   125  // Positive direction: 0-1000 -> 127-255
 
 // Hat switch codes (D-pad as buttons)
 #define GAMEPAD_HAT_UP      200
