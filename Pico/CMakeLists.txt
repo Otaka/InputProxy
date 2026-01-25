@@ -38,6 +38,7 @@ pico_sdk_init()
 add_executable(InputProxy
     src/mainPico.cpp
     src/UartManagerPico.cpp
+    ../shared/utils.cpp
    # src/UsbCdcManager.cpp
    # src/devices/usbCdc.cpp
     src/devices/AbstractVirtualDevice.cpp

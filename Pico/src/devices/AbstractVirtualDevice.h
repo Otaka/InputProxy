@@ -2,6 +2,13 @@
 #define ABSTRACT_VIRTUAL_DEVICE_H
 
 #include <functional>
+#include <stdint.h>
+
+// Structure describing the axes available in a device
+struct AxesDescription {
+    char** axisNames;
+    int axesCount;
+};
 
 class AbstractVirtualDevice {
 public:
@@ -21,6 +28,10 @@ public:
 
     // Update/process device state (called in main loop)
     virtual void update() = 0;
+
+    // Get description of all axes (buttons and axes)
+    // Index in returned array corresponds to axis index
+    virtual AxesDescription axesDescription() = 0;
 };
 
 #endif // ABSTRACT_VIRTUAL_DEVICE_H

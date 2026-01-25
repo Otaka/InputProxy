@@ -41,6 +41,7 @@ public:
     void setOnEvent(std::function<void(int, int)> lambda) override;
     bool init() override;
     void update() override;
+    AxesDescription axesDescription() override;
 
     // Consumer control (multimedia keys)
     void pressConsumerKey(uint16_t usage_code);

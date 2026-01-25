@@ -12,6 +12,7 @@
 #include "UartManagerPico.h"
 #include "../../shared/simplerpc/simplerpc.h"
 #include "../../shared/rpcinterface.h"
+#include "../../shared/utils.h"
 #include "devices/DeviceManager.h"
 #include "devices/TinyUsbKeyboardDevice.h"
 #include "devices/TinyUsbMouseDevice.h"
@@ -107,6 +108,7 @@ void initPicoLed() {
 }
 
 int main() {
+    testA();
     initPicoLed();
 
     // Initialize TinyUSB

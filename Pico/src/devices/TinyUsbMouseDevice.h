@@ -11,24 +11,24 @@
 // HID Report IDs
 #define REPORT_ID_MOUSE 1  // Standard mouse with buttons, X/Y movement, and wheel
 
-// Mouse button codes (for setAxis)
-#define MOUSE_BUTTON_LEFT   0
-#define MOUSE_BUTTON_RIGHT  1
-#define MOUSE_BUTTON_MIDDLE 2
-#define MOUSE_BUTTON_BACK   3
-#define MOUSE_BUTTON_FORWARD 4
+// Mouse button codes (for setAxis) - continuous from 1
+#define MOUSE_BUTTON_LEFT   1
+#define MOUSE_BUTTON_RIGHT  2
+#define MOUSE_BUTTON_MIDDLE 3
+#define MOUSE_BUTTON_BACK   4
+#define MOUSE_BUTTON_FORWARD 5
 
-// Mouse axis codes (for setAxis)
+// Mouse axis codes (for setAxis) - continuous from 6
 // Each axis split into minus (left/down) and plus (right/up)
 // Values are 0-1000, setting one direction resets the opposite
-#define MOUSE_AXIS_X_MINUS      5  // X Left
-#define MOUSE_AXIS_X_PLUS       6  // X Right
-#define MOUSE_AXIS_Y_MINUS      7  // Y Up
-#define MOUSE_AXIS_Y_PLUS       8  // Y Down
-#define MOUSE_AXIS_WHEEL_MINUS  9  // Wheel Down
-#define MOUSE_AXIS_WHEEL_PLUS   10  // Wheel Up
-#define MOUSE_AXIS_H_WHEEL_MINUS 11 // H-Wheel Left
-#define MOUSE_AXIS_H_WHEEL_PLUS  12 // H-Wheel Right
+#define MOUSE_AXIS_X_MINUS      6  // X Left
+#define MOUSE_AXIS_X_PLUS       7  // X Right
+#define MOUSE_AXIS_Y_MINUS      8  // Y Up
+#define MOUSE_AXIS_Y_PLUS       9  // Y Down
+#define MOUSE_AXIS_WHEEL_MINUS  10  // Wheel Down
+#define MOUSE_AXIS_WHEEL_PLUS   11  // Wheel Up
+#define MOUSE_AXIS_H_WHEEL_MINUS 12 // H-Wheel Left
+#define MOUSE_AXIS_H_WHEEL_PLUS  13 // H-Wheel Right
 
 // HID Interface Index for Mouse (defined in usb_descriptors.c)
 // Interface 0: Keyboard
@@ -47,6 +47,7 @@ public:
     void setOnEvent(std::function<void(int, int)> lambda) override;
     bool init() override;
     void update() override;
+    AxesDescription axesDescription() override;
 
     // Mouse control methods
     void pressButton(uint8_t button);      // 0=left, 1=right, 2=middle, 3=back, 4=forward

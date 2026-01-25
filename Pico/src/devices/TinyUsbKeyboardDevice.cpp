@@ -117,38 +117,38 @@ bool TinyUsbKeyboardDevice::init() {
 }
 
 void TinyUsbKeyboardDevice::setAxis(int code, int value) {
-    // code: HID keycode (0-255) for regular keys
-    //       500+ for consumer control keys (code - 500 = consumer usage code)
+    // code: HID keycode (1-256) for regular keys (continuous)
+    //       257-1280 for consumer control keys (code - 257 + 1 = consumer usage code)
     // value: 0 = released, non-zero = pressed
 
-    if (code < 0) {
+    if (code < 1) {
         return;
     }
 
-    // Consumer control keys (500+)
-    if (code >= 500) {
-        uint16_t consumer_code = static_cast<uint16_t>(code - 500);
+    // Regular keyboard keys (1-256) - convert to 0-based HID keycode
+    if (code >= 1 && code <= 256) {
+        uint8_t keycode = static_cast<uint8_t>(code - 1);
+        if (value > 0) {
+            pressKey(keycode);
+        } else {
+            releaseKey(keycode);
+        }
+        return;
+    }
+
+    // Consumer control keys (257-1280) - map to consumer usage codes 1-1024
+    if (code >= 257 && code <= 1280) {
+        uint16_t consumer_code = static_cast<uint16_t>(code - 257 + 1);
         if (consumer_code > 0x03FF) {
             return; // Invalid consumer code
         }
-        
+
         if (value > 0) {
             pressConsumerKey(consumer_code);
         } else {
             releaseConsumerKey(consumer_code);
         }
         return;
-    }
-
-    // Regular keyboard keys (0-255)
-    if (code > 255) {
-        return;
-    }
-
-    if (value > 0) {
-        pressKey(static_cast<uint8_t>(code));
-    } else {
-        releaseKey(static_cast<uint8_t>(code));
     }
 }
 
@@ -373,6 +373,91 @@ void TinyUsbKeyboardDevice::setReport(uint8_t report_id, hid_report_type_t repor
             }
         }
     }
+}
+
+// Static axis names for keyboard (stored in ROM, not RAM)
+// We provide names for common keys (1-256 for regular HID keycodes)
+// Index 0 is unused (axes start from 1)
+static const char* keyboardAxisNames[257] = {
+    "",          // 0: unused
+    "Key 0",     // 1: HID keycode 0
+    "Key 1",     // 2: HID keycode 1
+    "Key 2",     // 3: HID keycode 2
+    "A",         // 4: HID keycode 3
+    "B",         // 5: HID keycode 4
+    "C",         // 6: HID keycode 5
+    "D",         // 7: HID keycode 6
+    "E",         // 8: HID keycode 7
+    "F",         // 9: HID keycode 8
+    "G",         // 10: HID keycode 9
+    "H",         // 11: HID keycode 10
+    "I",         // 12: HID keycode 11
+    "J",         // 13: HID keycode 12
+    "K",         // 14: HID keycode 13
+    "L",         // 15: HID keycode 14
+    "M",         // 16: HID keycode 15
+    "N",         // 17: HID keycode 16
+    "O",         // 18: HID keycode 17
+    "P",         // 19: HID keycode 18
+    "Q",         // 20: HID keycode 19
+    "R",         // 21: HID keycode 20
+    "S",         // 22: HID keycode 21
+    "T",         // 23: HID keycode 22
+    "U",         // 24: HID keycode 23
+    "V",         // 25: HID keycode 24
+    "W",         // 26: HID keycode 25
+    "X",         // 27: HID keycode 26
+    "Y",         // 28: HID keycode 27
+    "Z",         // 29: HID keycode 28
+    "1",         // 30: HID keycode 29
+    "2",         // 31: HID keycode 30
+    "3",         // 32: HID keycode 31
+    "4",         // 33: HID keycode 32
+    "5",         // 34: HID keycode 33
+    "6",         // 35: HID keycode 34
+    "7",         // 36: HID keycode 35
+    "8",         // 37: HID keycode 36
+    "9",         // 38: HID keycode 37
+    "0",         // 39: HID keycode 38
+    "Enter",     // 40: HID keycode 39
+    "Escape",    // 41: HID keycode 40
+    "Backspace", // 42: HID keycode 41
+    "Tab",       // 43: HID keycode 42
+    "Space",     // 44: HID keycode 43
+    "Key 44", "Key 45", "Key 46", "Key 47", "Key 48", "Key 49", "Key 50", "Key 51",
+    "Key 52", "Key 53", "Key 54", "Key 55", "Key 56", "Key 57", "Key 58", "Key 59",
+    "Key 60", "Key 61", "Key 62", "Key 63", "Key 64", "Key 65", "Key 66", "Key 67",
+    "Key 68", "Key 69", "Key 70", "Key 71", "Key 72", "Key 73", "Key 74", "Key 75",
+    "Key 76", "Key 77", "Key 78", "Key 79", "Key 80", "Key 81", "Key 82", "Key 83",
+    "Key 84", "Key 85", "Key 86", "Key 87", "Key 88", "Key 89", "Key 90", "Key 91",
+    "Key 92", "Key 93", "Key 94", "Key 95", "Key 96", "Key 97", "Key 98", "Key 99",
+    "Key 100", "Key 101", "Key 102", "Key 103", "Key 104", "Key 105", "Key 106", "Key 107",
+    "Key 108", "Key 109", "Key 110", "Key 111", "Key 112", "Key 113", "Key 114", "Key 115",
+    "Key 116", "Key 117", "Key 118", "Key 119", "Key 120", "Key 121", "Key 122", "Key 123",
+    "Key 124", "Key 125", "Key 126", "Key 127", "Key 128", "Key 129", "Key 130", "Key 131",
+    "Key 132", "Key 133", "Key 134", "Key 135", "Key 136", "Key 137", "Key 138", "Key 139",
+    "Key 140", "Key 141", "Key 142", "Key 143", "Key 144", "Key 145", "Key 146", "Key 147",
+    "Key 148", "Key 149", "Key 150", "Key 151", "Key 152", "Key 153", "Key 154", "Key 155",
+    "Key 156", "Key 157", "Key 158", "Key 159", "Key 160", "Key 161", "Key 162", "Key 163",
+    "Key 164", "Key 165", "Key 166", "Key 167", "Key 168", "Key 169", "Key 170", "Key 171",
+    "Key 172", "Key 173", "Key 174", "Key 175", "Key 176", "Key 177", "Key 178", "Key 179",
+    "Key 180", "Key 181", "Key 182", "Key 183", "Key 184", "Key 185", "Key 186", "Key 187",
+    "Key 188", "Key 189", "Key 190", "Key 191", "Key 192", "Key 193", "Key 194", "Key 195",
+    "Key 196", "Key 197", "Key 198", "Key 199", "Key 200", "Key 201", "Key 202", "Key 203",
+    "Key 204", "Key 205", "Key 206", "Key 207", "Key 208", "Key 209", "Key 210", "Key 211",
+    "Key 212", "Key 213", "Key 214", "Key 215", "Key 216", "Key 217", "Key 218", "Key 219",
+    "Key 220", "Key 221", "Key 222", "Key 223", "Key 224", "Key 225", "Key 226", "Key 227",
+    "Key 228", "Key 229", "Key 230", "Key 231", "Key 232", "Key 233", "Key 234", "Key 235",
+    "Key 236", "Key 237", "Key 238", "Key 239", "Key 240", "Key 241", "Key 242", "Key 243",
+    "Key 244", "Key 245", "Key 246", "Key 247", "Key 248", "Key 249", "Key 250", "Key 251",
+    "Key 252", "Key 253", "Key 254", "Key 255"
+};
+
+AxesDescription TinyUsbKeyboardDevice::axesDescription() {
+    AxesDescription desc;
+    desc.axisNames = (char**)keyboardAxisNames;
+    desc.axesCount = 257; // 0-256 (index 0 unused, 1-256 for HID keycodes 0-255)
+    return desc;
 }
 
 // ==============================================================================

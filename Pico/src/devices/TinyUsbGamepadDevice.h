@@ -105,6 +105,7 @@ public:
     void setOnEvent(std::function<void(int, int)> lambda) override;
     bool init() override;
     void update() override;
+    AxesDescription axesDescription() override;
 
     // Direct control methods
     void pressButton(uint8_t button);
@@ -161,8 +162,22 @@ private:
     // Axis mapping: maps axis code (GAMEPAD_AXIS_LX, etc.) to report index
     int8_t axisCodeToReportIndex[8];  // -1 if axis not enabled
 
+    // Continuous axis index mapping: maps continuous index (1, 2, 3...) to actual control code
+    // This allows external code to use simple continuous indexes
+    struct AxisMapping {
+        int code;  // The actual code (button index, axis code, hat code)
+    };
+    AxisMapping* continuousAxisMap;  // Dynamically allocated based on config
+    int continuousAxisCount;
+
+    // 512-byte buffer for AxesDescription (cast to struct with char** and axis names)
+    uint8_t axesDescriptionBuffer[512];
+    bool axesDescriptionInitialized;
+
     // Internal helpers
     void buildHidDescriptor();
+    void buildAxisMapping();
+    void buildAxesDescriptionBuffer();
     void sendReport();
     void updateHatFromButtons();
     uint8_t calculateHatValue() const;

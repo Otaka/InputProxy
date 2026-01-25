@@ -74,26 +74,26 @@ bool TinyUsbMouseDevice::init() {
 }
 
 void TinyUsbMouseDevice::setAxis(int code, int value) {
-    // code: Button codes (0-4) for mouse buttons
-    //       100-103 for axis movements
+    // code: Button codes (1-5) for mouse buttons
+    //       6-13 for axis movements
     // value: For buttons: 0 = released, non-zero = pressed
     //        For axes: relative movement value (-127 to 127 typically)
 
-    if (code < 0) {
+    if (code < 1) {
         return;
     }
 
-    // Mouse buttons (0-4)
-    if (code >= 0 && code <= 4) {
+    // Mouse buttons (1-5) - convert to 0-based for internal use
+    if (code >= 1 && code <= 5) {
         if (value > 0) {
-            pressButton(static_cast<uint8_t>(code));
+            pressButton(static_cast<uint8_t>(code - 1));
         } else {
-            releaseButton(static_cast<uint8_t>(code));
+            releaseButton(static_cast<uint8_t>(code - 1));
         }
         return;
     }
 
-    // Mouse axes (100-107) - split into plus/minus for accurate control
+    // Mouse axes (6-13) - split into plus/minus for accurate control
     // Values are 0-1000, clamped to 0-127 for HID report
     switch (code) {
         case MOUSE_AXIS_X_MINUS:  // Left
@@ -214,9 +214,34 @@ void TinyUsbMouseDevice::setReport(uint8_t report_id, hid_report_type_t report_t
     (void) report_type;
     (void) buffer;
     (void) bufsize;
-    
+
     // Mouse typically doesn't receive SET_REPORT
     // If needed in the future, implement here
+}
+
+// Static axis names for mouse (stored in ROM, not RAM)
+static const char* mouseAxisNames[] = {
+    "",                  // Index 0 (unused - axes start from 1)
+    "Button Left",       // Index 1
+    "Button Right",      // Index 2
+    "Button Middle",     // Index 3
+    "Button Back",       // Index 4
+    "Button Forward",    // Index 5
+    "X Axis Left",       // Index 6
+    "X Axis Right",      // Index 7
+    "Y Axis Up",         // Index 8
+    "Y Axis Down",       // Index 9
+    "Wheel Down",        // Index 10
+    "Wheel Up",          // Index 11
+    "H-Wheel Left",      // Index 12
+    "H-Wheel Right"      // Index 13
+};
+
+AxesDescription TinyUsbMouseDevice::axesDescription() {
+    AxesDescription desc;
+    desc.axisNames = (char**)mouseAxisNames;
+    desc.axesCount = 14; // 0-13 (index 0 unused)
+    return desc;
 }
 
 // ==============================================================================
