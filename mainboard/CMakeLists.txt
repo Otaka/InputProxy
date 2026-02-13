@@ -4,4 +4,4 @@ project(InputProxyMainBoard CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(app src/EventLoop.cpp src/main.cpp src/webtester.cpp)
+add_executable(app src/EventLoop.cpp src/main.cpp src/webtester.cpp src/RealDeviceManager.cpp)

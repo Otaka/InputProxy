@@ -38,15 +38,21 @@ pico_sdk_init()
 add_executable(InputProxy
     src/mainPico.cpp
     src/UartManagerPico.cpp
-    ../shared/utils.cpp
+    src/PersistentStorage.cpp
+    src/usb_descriptors.cpp
+    ../shared/shared.cpp
    # src/UsbCdcManager.cpp
    # src/devices/usbCdc.cpp
     src/devices/AbstractVirtualDevice.cpp
+    src/devices/AbstractDeviceManager.cpp
    # src/devices/KeyboardDevice.cpp
     src/devices/TinyUsbKeyboardDevice.cpp
     src/devices/TinyUsbMouseDevice.cpp
     src/devices/TinyUsbGamepadDevice.cpp
-    src/devices/DeviceManager.cpp
+    src/devices/HidDeviceManager.cpp
+    src/devices/XInputDevice.cpp
+    src/devices/XinputDeviceManager.cpp
+    src/devices/tud_driver_xinput.cpp
     src/Timer.cpp
 )
 

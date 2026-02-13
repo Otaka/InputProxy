@@ -1,9 +1,10 @@
-#ifndef DEVICE_MANAGER_H
-#define DEVICE_MANAGER_H
+#ifndef HID_DEVICE_MANAGER_H
+#define HID_DEVICE_MANAGER_H
 
 #include <vector>
 #include <string>
 #include <memory>
+#include "AbstractDeviceManager.h"
 #include "AbstractVirtualDevice.h"
 #include "TinyUsbKeyboardDevice.h"
 #include "TinyUsbMouseDevice.h"
@@ -31,17 +32,19 @@ struct UsbDevice {
     bool occupied;        // Whether this socket is occupied
 };
 
-class DeviceManager {
+class HidDeviceManager : public AbstractDeviceManager {
 public:
-    DeviceManager();
-    ~DeviceManager();
+    HidDeviceManager();
+    ~HidDeviceManager() override;
+
+    // ===== AbstractDeviceManager Implementation =====
 
     // USB device-level configuration (VID/PID/Serial apply to entire composite device)
-    DeviceManager& vendorId(uint16_t vid);
-    DeviceManager& productId(uint16_t pid);
-    DeviceManager& manufacturer(const std::string& name);
-    DeviceManager& productName(const std::string& name);
-    DeviceManager& serialNumber(const std::string& serial);
+    AbstractDeviceManager* vendorId(uint16_t vid) override;
+    AbstractDeviceManager* productId(uint16_t pid) override;
+    AbstractDeviceManager* manufacturer(const std::string& name) override;
+    AbstractDeviceManager* productName(const std::string& name) override;
+    AbstractDeviceManager* serialNumber(const std::string& serial) override;
 
     // Getters for USB descriptors
     uint16_t getVendorId() const { return m_vendorId; }
@@ -63,25 +66,37 @@ public:
     bool isSocketOccupied(uint8_t socketIndex) const;
     
     // Direct device access by socket index
-    AbstractVirtualDevice* getDevice(uint8_t socketIndex);
+    AbstractVirtualDevice* getDevice(int socketIndex) override;
     UsbDevice* getDeviceInfo(uint8_t socketIndex);
-    
+
     // Get device by interface number (for USB callbacks)
     UsbDevice* getDeviceByInterface(uint8_t interfaceNum);
-    
+
     // Simplified setAxis - access device directly by socket index
-    void setAxis(uint8_t socketIndex, int axis, int value);
-    
+    void setAxis(int socketIndex, int axis, int value) override;
+
     // Initialize all devices and USB
-    bool init();
-    
+    bool init() override;
+
     // Update all devices (called in main loop)
-    void update();
+    void update() override;
     
-    // USB descriptor generation
-    const uint8_t* getConfigurationDescriptor(uint16_t* length);
+    // USB descriptor callbacks (AbstractDeviceManager interface)
+    uint8_t const* getDeviceDescriptor() override;
+    uint8_t const* getConfigurationDescriptor() override;
+    uint8_t const* getHidReportDescriptor(uint8_t itf) override;
+    uint16_t getHidReportDescriptorLength(uint8_t itf) override;
+    char const* getStringDescriptor(uint8_t index, uint16_t langid) override;
+
+    // Mode identification
+    DeviceMode getMode() const override { return DeviceMode::HID_MODE; }
+
+    // ===== HidDeviceManager-specific Methods =====
+
+    // USB descriptor generation (internal use)
+    const uint8_t* getConfigurationDescriptorWithLength(uint16_t* length);
     const uint8_t* getDeviceReportDescriptor(uint8_t interfaceNum, uint16_t* length);
-    
+
     // Get occupied device count
     size_t getOccupiedCount() const;
 
@@ -111,17 +126,15 @@ private:
     void cleanupDevice(UsbDevice& info);
 };
 
-// Global accessor functions (extern "C" for TinyUSB callbacks)
+// Helper function for USB mounting status
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-DeviceManager* getDeviceManager();
-void setDeviceManager(DeviceManager* manager);
 bool isUsbMounted(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // DEVICE_MANAGER_H
+#endif // HID_DEVICE_MANAGER_H

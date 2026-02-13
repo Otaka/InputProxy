@@ -246,6 +246,33 @@ std::string generateHtml() {
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
             transform: translateY(2px);
         }
+        .mode-button {
+            padding: 12px 24px;
+            border: 2px solid #2196F3;
+            border-radius: 5px;
+            background: linear-gradient(to bottom, #64B5F6, #2196F3);
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            display: inline-block;
+            user-select: none;
+            margin-top: 10px;
+            margin-right: 10px;
+        }
+        .mode-button:hover {
+            background: linear-gradient(to bottom, #42A5F5, #1976D2);
+            border-color: #1976D2;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .mode-button:active {
+            background: #1565C0;
+            border-color: #0D47A1;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+            transform: translateY(2px);
+        }
     </style>
 </head>
 <body>
@@ -277,6 +304,10 @@ std::string generateHtml() {
                     <option value="gamepad">XInput Gamepad</option>
                     <option value="hidgamepad">HID Gamepad</option>
                 </select>
+            </div>
+            <div>
+                <button class="mode-button" onclick="setDeviceMode(0)">As HID</button>
+                <button class="mode-button" onclick="setDeviceMode(1)">As XInput</button>
             </div>
             <div>
                 <button class="reboot-button" onclick="rebootToFlashMode()">Reboot to Flash Mode</button>
@@ -1051,6 +1082,29 @@ std::string generateHtml() {
 
         const hidgamepadSection = document.getElementById('hidgamepadSection');
 
+        // Set device mode function
+        function setDeviceMode(mode) {
+            const modeName = mode === 0 ? 'HID' : 'XInput';
+            if (!confirm(`Switch device mode to ${modeName}?\n\nThis will save the mode to flash and reboot the Pico.`)) {
+                return;
+            }
+            
+            updateStatus(`Setting device mode to ${modeName}...`, true);
+            
+            fetch(`/setmode?mode=${mode}`)
+                .then(response => {
+                    if (response.ok) {
+                        updateStatus(`Mode changed to ${modeName}! Pico is rebooting.`, false);
+                    } else {
+                        updateStatus('Error: Failed to set mode (HTTP ' + response.status + ')', false);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error setting mode:', err);
+                    updateStatus('Error: ' + err.message, false);
+                });
+        }
+
         // Reboot to flash mode function
         function rebootToFlashMode() {
             if (!confirm('Reboot Pico to Flash Mode?')) {
@@ -1437,10 +1491,10 @@ std::string generateHtml() {
     return html.str();
 }
 
-void initWebserver(Main2Pico& picoRpcClient) {
+void initWebserver(Main2Pico& main2PicoRpcClient) {
     std::cout << "Starting HID Web Tester server on port 8080..." << std::endl;
     
-    std::thread httpThread([&picoRpcClient]() {
+    std::thread httpThread([&main2PicoRpcClient]() {
         httplib::Server svr;
 
         // Main page - serve the HTML interface
@@ -1448,13 +1502,25 @@ void initWebserver(Main2Pico& picoRpcClient) {
             res.set_content(generateHtml(), "text/html");
         });
         
-        svr.Get("/rebootflashmode", [&picoRpcClient](const httplib::Request &req, httplib::Response &res) {
-            picoRpcClient.rebootFlashMode();
+        svr.Get("/rebootflashmode", [&main2PicoRpcClient](const httplib::Request &req, httplib::Response &res) {
+            main2PicoRpcClient.rebootFlashMode();
             res.set_content("OK", "text/plain");
+        });
+        
+        svr.Get("/setmode", [&main2PicoRpcClient](const httplib::Request &req, httplib::Response &res) {
+            if (req.has_param("mode")) {
+                uint8_t mode = static_cast<uint8_t>(std::stoi(req.get_param_value("mode")));
+                std::cout << "[WEBTESTER] Setting device mode to " << (mode == 0 ? "HID" : "XInput") << std::endl;
+                main2PicoRpcClient.setMode(mode);
+                res.set_content("OK", "text/plain");
+            } else {
+                res.status = 400;
+                res.set_content("Missing mode parameter", "text/plain");
+            }
         });
         // Endpoint to set axis/button values
         // Query params: device (1-10), axis (key code), value (0 or 1)
-        svr.Get("/setaxis", [&picoRpcClient](const httplib::Request &req, httplib::Response &res) {
+        svr.Get("/setaxis", [&main2PicoRpcClient](const httplib::Request &req, httplib::Response &res) {
             // Parse parameters
             if (req.has_param("device") && req.has_param("axis") && req.has_param("value")) {
                 int device = std::stoi(req.get_param_value("device"));
@@ -1464,10 +1530,10 @@ void initWebserver(Main2Pico& picoRpcClient) {
                 std::cout << "[WEBTESTER] Device " << device 
                           << " Axis 0x" << std::hex << axis << std::dec
                           << " Value " << value << std::endl;
-                picoRpcClient.setAxis(device, axis, value);
+                main2PicoRpcClient.setAxis(device, axis, value);
                 // TODO: Call RPC method to send key press/release to Pico
                 // For now, just acknowledge the request
-                // Example: picoRpcClient.sendKeyPress(device, axis, value);
+                // Example: main2PicoRpcClient.sendKeyPress(device, axis, value);
                 
                 res.set_content("OK", "text/plain");
             } else {

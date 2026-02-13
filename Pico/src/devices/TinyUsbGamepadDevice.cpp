@@ -1,6 +1,7 @@
 #include "TinyUsbGamepadDevice.h"
-#include "DeviceManager.h"
+#include "HidDeviceManager.h"
 #include "tusb.h"
+#include "../shared/shared.h"
 #include <cstdlib>
 
 // HID Usage constants for axes
@@ -27,9 +28,8 @@ TinyUsbGamepadDevice::TinyUsbGamepadDevice(uint8_t gamepad_index, uint8_t num_bu
     , reportChanged(false)
     , hidDescriptor(nullptr)
     , hidDescriptorSize(0)
-    , continuousAxisMap(nullptr)
-    , continuousAxisCount(0)
-    , axesDescriptionInitialized(false)
+    , axesDescArray(nullptr)
+    , axesDescCount(0)
 {
     // Initialize axis mapping to -1 (disabled)
     for (int i = 0; i < 8; i++) {
@@ -64,9 +64,8 @@ TinyUsbGamepadDevice::TinyUsbGamepadDevice(uint8_t gamepad_index, uint8_t num_bu
         reportSize += 1;  // +1 for hat
     }
 
-    // Build continuous axis mapping and description buffer
-    buildAxisMapping();
-    buildAxesDescriptionBuffer();
+    // Build the axes description based on configuration
+    buildAxesDescription();
 }
 
 TinyUsbGamepadDevice::~TinyUsbGamepadDevice() {
@@ -74,9 +73,9 @@ TinyUsbGamepadDevice::~TinyUsbGamepadDevice() {
         free(hidDescriptor);
         hidDescriptor = nullptr;
     }
-    if (continuousAxisMap) {
-        free(continuousAxisMap);
-        continuousAxisMap = nullptr;
+    if (axesDescArray) {
+        free(axesDescArray);
+        axesDescArray = nullptr;
     }
 }
 
@@ -88,15 +87,6 @@ uint8_t TinyUsbGamepadDevice::getNumAxes() const {
         }
     }
     return count;
-}
-
-uint8_t TinyUsbGamepadDevice::getAxisReportIndex(uint8_t axisCode) const {
-    if (axisCode < GAMEPAD_AXIS_LX || axisCode > GAMEPAD_AXIS_SLIDER) {
-        return 0xFF;  // Invalid
-    }
-    uint8_t axisIndex = axisCode - GAMEPAD_AXIS_LX;
-    int8_t reportIndex = axisCodeToReportIndex[axisIndex];
-    return (reportIndex >= 0) ? static_cast<uint8_t>(reportIndex) : 0xFF;
 }
 
 void TinyUsbGamepadDevice::buildHidDescriptor() {
@@ -209,150 +199,59 @@ void TinyUsbGamepadDevice::buildHidDescriptor() {
     }
 }
 
-void TinyUsbGamepadDevice::buildAxisMapping() {
-    // Count total controls: buttons + (axes * 2 for +/- directions) + hat directions
-    uint8_t numEnabledAxes = getNumAxes();
-    int totalControls = numButtons;  // Start with buttons
 
-    // Add axes (each axis has 2 directions: minus and plus)
+void TinyUsbGamepadDevice::buildAxesDescription() {
+    // Count total controls based on configuration
+    int totalControls = 0;
+
+    // Hat directions (if enabled)
+    if (hasHat) {
+        totalControls += 4;
+    }
+
+    // Buttons
+    totalControls += numButtons;
+
+    // Axes (each enabled axis has 2 directions: minus and plus)
+    uint8_t numEnabledAxes = getNumAxes();
     totalControls += numEnabledAxes * 2;
 
-    // Add hat directions if enabled
-    if (hasHat) {
-        totalControls += 4;  // Up, Down, Left, Right
-    }
-
-    continuousAxisCount = totalControls + 1;  // +1 for index 0 (unused)
-
-    // Allocate mapping array
-    continuousAxisMap = (AxisMapping*)malloc(continuousAxisCount * sizeof(AxisMapping));
-    if (!continuousAxisMap) {
-        continuousAxisCount = 0;
+    // Allocate the array
+    axesDescCount = totalControls;
+    axesDescArray = (AxisDescription*)malloc(axesDescCount * sizeof(AxisDescription));
+    if (!axesDescArray) {
+        axesDescCount = 0;
         return;
     }
 
-    int currentIndex = 1;  // Start from 1 (0 is unused)
+    int currentIndex = 0;
 
-    // Map buttons (continuous index 1..numButtons -> button codes 0..numButtons-1)
-    for (uint8_t i = 0; i < numButtons; i++) {
-        continuousAxisMap[currentIndex].code = i;  // Button code is just the button index
-        currentIndex++;
+    // Add hat directions (if enabled)
+    if (hasHat) {
+        axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[GAMEPAD_AXIS_HAT_UP], GAMEPAD_AXIS_HAT_UP};
+        axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[GAMEPAD_AXIS_HAT_DOWN], GAMEPAD_AXIS_HAT_DOWN};
+        axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[GAMEPAD_AXIS_HAT_LEFT], GAMEPAD_AXIS_HAT_LEFT};
+        axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[GAMEPAD_AXIS_HAT_RIGHT], GAMEPAD_AXIS_HAT_RIGHT};
     }
 
-    // Map axes (for each enabled axis, create minus and plus entries)
+    // Add buttons
+    for (uint8_t i = 0; i < numButtons; i++) {
+        int axisCode = GAMEPAD_BTN_1 + i;
+        axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[axisCode], axisCode};
+    }
+
+    // Add enabled axes (minus and plus directions)
     for (int axisIdx = 0; axisIdx < 8; axisIdx++) {
         if (axesBitMask & (1 << axisIdx)) {
-            // Axis MINUS direction (e.g., GAMEPAD_AXIS_LX_MINUS)
-            continuousAxisMap[currentIndex].code = GAMEPAD_AXIS_LX_MINUS + (axisIdx * 2);
-            currentIndex++;
+            // Minus direction
+            int minusCode = GAMEPAD_AXIS_LX_MINUS + (axisIdx * 2);
+            axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[minusCode], minusCode};
 
-            // Axis PLUS direction (e.g., GAMEPAD_AXIS_LX_PLUS)
-            continuousAxisMap[currentIndex].code = GAMEPAD_AXIS_LX_PLUS + (axisIdx * 2);
-            currentIndex++;
+            // Plus direction
+            int plusCode = GAMEPAD_AXIS_LX_PLUS + (axisIdx * 2);
+            axesDescArray[currentIndex++] = {(char*)HID_GAMEPAD_AXES_NAMES[plusCode], plusCode};
         }
     }
-
-    // Map hat directions if enabled
-    if (hasHat) {
-        continuousAxisMap[currentIndex++].code = GAMEPAD_HAT_UP;
-        continuousAxisMap[currentIndex++].code = GAMEPAD_HAT_DOWN;
-        continuousAxisMap[currentIndex++].code = GAMEPAD_HAT_LEFT;
-        continuousAxisMap[currentIndex++].code = GAMEPAD_HAT_RIGHT;
-    }
-}
-
-// Static button name strings (stored in ROM, not RAM)
-static const char* gamepadButtonNames[32] = {
-    "Button 1",  "Button 2",  "Button 3",  "Button 4",
-    "Button 5",  "Button 6",  "Button 7",  "Button 8",
-    "Button 9",  "Button 10", "Button 11", "Button 12",
-    "Button 13", "Button 14", "Button 15", "Button 16",
-    "Button 17", "Button 18", "Button 19", "Button 20",
-    "Button 21", "Button 22", "Button 23", "Button 24",
-    "Button 25", "Button 26", "Button 27", "Button 28",
-    "Button 29", "Button 30", "Button 31", "Button 32"
-};
-
-// Static axis direction name strings (stored in ROM, not RAM)
-static const char* gamepadAxisMinusNames[8] = {
-    "Stick LX-", "Stick LY-", "Stick LZ-", "Stick RX-",
-    "Stick RY-", "Stick RZ-", "Dial-", "Slider-"
-};
-
-static const char* gamepadAxisPlusNames[8] = {
-    "Stick LX+", "Stick LY+", "Stick LZ+", "Stick RX+",
-    "Stick RY+", "Stick RZ+", "Dial+", "Slider+"
-};
-
-// Static hat direction name strings (stored in ROM, not RAM)
-static const char* gamepadHatNames[4] = {
-    "Hat Up", "Hat Down", "Hat Left", "Hat Right"
-};
-
-void TinyUsbGamepadDevice::buildAxesDescriptionBuffer() {
-    // Clear the buffer
-    memset(axesDescriptionBuffer, 0, sizeof(axesDescriptionBuffer));
-
-    if (continuousAxisCount == 0 || !continuousAxisMap) {
-        return;
-    }
-
-    // Layout of buffer:
-    // - First part: AxesDescription struct (char** pointer + uint count)
-    // - Second part: Array of char* pointers (one per axis)
-    // No need for string data part - we use static ROM strings
-
-    AxesDescription* desc = (AxesDescription*)axesDescriptionBuffer;
-    char** namePointers = (char**)(axesDescriptionBuffer + sizeof(AxesDescription));
-
-    desc->axisNames = namePointers;
-    desc->axesCount = continuousAxisCount;
-
-    // Empty name for index 0 (unused)
-    static const char* emptyString = "";
-    namePointers[0] = (char*)emptyString;
-
-    // Point to static ROM strings for each continuous index
-    for (int i = 1; i < continuousAxisCount; i++) {
-        int code = continuousAxisMap[i].code;
-
-        // Buttons (0-31)
-        if (code < GAMEPAD_MAX_BUTTONS) {
-            namePointers[i] = (char*)gamepadButtonNames[code];
-        }
-        // Axis MINUS codes (110-124)
-        else if (code >= GAMEPAD_AXIS_LX_MINUS && code <= GAMEPAD_AXIS_SLIDER_MINUS) {
-            uint8_t axisIdx = (code - GAMEPAD_AXIS_LX_MINUS) / 2;
-            if (axisIdx < 8) {
-                namePointers[i] = (char*)gamepadAxisMinusNames[axisIdx];
-            } else {
-                namePointers[i] = (char*)emptyString;
-            }
-        }
-        // Axis PLUS codes (111-125)
-        else if (code >= GAMEPAD_AXIS_LX_PLUS && code <= GAMEPAD_AXIS_SLIDER_PLUS) {
-            uint8_t axisIdx = (code - GAMEPAD_AXIS_LX_PLUS) / 2;
-            if (axisIdx < 8) {
-                namePointers[i] = (char*)gamepadAxisPlusNames[axisIdx];
-            } else {
-                namePointers[i] = (char*)emptyString;
-            }
-        }
-        // Hat directions (200-203)
-        else if (code >= GAMEPAD_HAT_UP && code <= GAMEPAD_HAT_RIGHT) {
-            int hatIdx = code - GAMEPAD_HAT_UP;
-            if (hatIdx >= 0 && hatIdx < 4) {
-                namePointers[i] = (char*)gamepadHatNames[hatIdx];
-            } else {
-                namePointers[i] = (char*)emptyString;
-            }
-        }
-        else {
-            namePointers[i] = (char*)emptyString;
-        }
-    }
-
-    axesDescriptionInitialized = true;
 }
 
 bool TinyUsbGamepadDevice::init() {
@@ -371,65 +270,53 @@ bool TinyUsbGamepadDevice::init() {
 }
 
 void TinyUsbGamepadDevice::setAxis(int code, int value) {
-    if (code < 1 || !continuousAxisMap) return;
-
-    // Check if this is a valid continuous axis index (1 to continuousAxisCount-1)
-    if (code >= continuousAxisCount) return;
-
-    // Map continuous index to actual control code
-    int actualCode = continuousAxisMap[code].code;
-
-    // Buttons (codes 0-31)
-    if (actualCode < GAMEPAD_MAX_BUTTONS) {
-        if (value > 0) {
-            pressButton(static_cast<uint8_t>(actualCode));
-        } else {
-            releaseButton(static_cast<uint8_t>(actualCode));
-        }
-        return;
-    }
-
-    // Axes MINUS codes (110-124) - Negative direction (0-127)
-    if (actualCode >= GAMEPAD_AXIS_LX_MINUS && actualCode <= GAMEPAD_AXIS_SLIDER_MINUS) {
-        // Determine which base axis this corresponds to
-        uint8_t baseAxisIndex = (actualCode - GAMEPAD_AXIS_LX_MINUS) / 2;
-        if (baseAxisIndex < 8) {
-            int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
-            if (reportIndex >= 0) {
-                // Scale 0-1000 to 0-127 (negative direction)
-                uint8_t scaledValue = static_cast<uint8_t>((value * 127) / 1000);
-                setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
-            }
-        }
-        return;
-    }
-
-    // Axes PLUS codes (111-125) - Positive direction (127-255)
-    if (actualCode >= GAMEPAD_AXIS_LX_PLUS && actualCode <= GAMEPAD_AXIS_SLIDER_PLUS) {
-        // Determine which base axis this corresponds to
-        uint8_t baseAxisIndex = (actualCode - GAMEPAD_AXIS_LX_PLUS) / 2;
-        if (baseAxisIndex < 8) {
-            int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
-            if (reportIndex >= 0) {
-                // Scale 0-1000 to 127-255 (positive direction)
-                // Map: 0->127, 1000->255 (range of 128 values)
-                uint8_t scaledValue = 127 + static_cast<uint8_t>((value * 128) / 1000);
-                setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
-            }
-        }
-        return;
-    }
-
-    // Hat switch (codes 200-203)
-    if (actualCode >= GAMEPAD_HAT_UP && actualCode <= GAMEPAD_HAT_RIGHT) {
+    // Hat switch (codes 0-3)
+    if (code >= GAMEPAD_HAT_UP && code <= GAMEPAD_HAT_RIGHT) {
+        if (!hasHat) return;  // Hat not enabled
         bool pressed = (value > 0);
-        switch (actualCode) {
+        switch (code) {
             case GAMEPAD_HAT_UP:    hatUp = pressed; break;
             case GAMEPAD_HAT_DOWN:  hatDown = pressed; break;
             case GAMEPAD_HAT_LEFT:  hatLeft = pressed; break;
             case GAMEPAD_HAT_RIGHT: hatRight = pressed; break;
         }
         updateHatFromButtons();
+        return;
+    }
+
+    // Buttons (codes 4-35, representing buttons 1-32)
+    if (code >= GAMEPAD_BTN_1 && code <= GAMEPAD_BTN_32) {
+        uint8_t buttonIndex = code - GAMEPAD_BTN_1;  // Convert to 0-based index
+        if (buttonIndex >= numButtons) return;  // Button not enabled
+        if (value > 0) {
+            pressButton(buttonIndex);
+        } else {
+            releaseButton(buttonIndex);
+        }
+        return;
+    }
+
+    // Axes (codes 36-51)
+    if (code >= GAMEPAD_AXIS_LX_MINUS && code <= GAMEPAD_AXIS_SLIDER_PLUS) {
+        // Calculate which axis (0-7) and whether it's minus or plus
+        int axisOffset = code - GAMEPAD_AXIS_LX_MINUS;
+        uint8_t baseAxisIndex = axisOffset / 2;  // 0-7
+        bool isPlusDirection = (axisOffset % 2 == 1);
+
+        if (baseAxisIndex >= 8) return;  // Invalid axis
+
+        int8_t reportIndex = axisCodeToReportIndex[baseAxisIndex];
+        if (reportIndex < 0) return;  // Axis not enabled
+
+        uint8_t scaledValue;
+        if (isPlusDirection) {
+            // Positive direction: 0-1000 -> 127-255
+            scaledValue = 127 + static_cast<uint8_t>((value * 128) / 1000);
+        } else {
+            // Negative direction: 0-1000 -> 0-127
+            scaledValue = static_cast<uint8_t>((value * 127) / 1000);
+        }
+        setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
         return;
     }
 }
@@ -609,17 +496,10 @@ void TinyUsbGamepadDevice::setReport(uint8_t report_id, hid_report_type_t report
 }
 
 AxesDescription TinyUsbGamepadDevice::axesDescription() {
-    if (!axesDescriptionInitialized) {
-        // Return empty description if not initialized
-        AxesDescription empty;
-        empty.axisNames = nullptr;
-        empty.axesCount = 0;
-        return empty;
-    }
-
-    // Return the description from the buffer
-    AxesDescription* desc = (AxesDescription*)axesDescriptionBuffer;
-    return *desc;
+    AxesDescription desc;
+    desc.axes = axesDescArray;
+    desc.axesCount = axesDescCount;
+    return desc;
 }
 
 // ==============================================================================

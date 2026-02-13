@@ -1,6 +1,6 @@
 #ifndef TINYUSB_MOUSE_DEVICE_H
 #define TINYUSB_MOUSE_DEVICE_H
-
+#include "../shared/shared.h"
 #include "AbstractVirtualDevice.h"
 #include <functional>
 #include <stdint.h>
@@ -10,26 +10,6 @@
 
 // HID Report IDs
 #define REPORT_ID_MOUSE 1  // Standard mouse with buttons, X/Y movement, and wheel
-
-// Mouse button codes (for setAxis) - continuous from 1
-#define MOUSE_BUTTON_LEFT   1
-#define MOUSE_BUTTON_RIGHT  2
-#define MOUSE_BUTTON_MIDDLE 3
-#define MOUSE_BUTTON_BACK   4
-#define MOUSE_BUTTON_FORWARD 5
-
-// Mouse axis codes (for setAxis) - continuous from 6
-// Each axis split into minus (left/down) and plus (right/up)
-// Values are 0-1000, setting one direction resets the opposite
-#define MOUSE_AXIS_X_MINUS      6  // X Left
-#define MOUSE_AXIS_X_PLUS       7  // X Right
-#define MOUSE_AXIS_Y_MINUS      8  // Y Up
-#define MOUSE_AXIS_Y_PLUS       9  // Y Down
-#define MOUSE_AXIS_WHEEL_MINUS  10  // Wheel Down
-#define MOUSE_AXIS_WHEEL_PLUS   11  // Wheel Up
-#define MOUSE_AXIS_H_WHEEL_MINUS 12 // H-Wheel Left
-#define MOUSE_AXIS_H_WHEEL_PLUS  13 // H-Wheel Right
-
 // HID Interface Index for Mouse (defined in usb_descriptors.c)
 // Interface 0: Keyboard
 // Interface 1: Mouse

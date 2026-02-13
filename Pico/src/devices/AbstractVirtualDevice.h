@@ -4,10 +4,16 @@
 #include <functional>
 #include <stdint.h>
 
-// Structure describing the axes available in a device
+// Structure describing a single axis/button control
+struct AxisDescription {
+    char* name;       // Human-readable name
+    int axisIndex;    // The axis code/index to use with setAxis()
+};
+
+// Structure describing all axes available in a device
 struct AxesDescription {
-    char** axisNames;
-    int axesCount;
+    AxisDescription* axes;  // Array of axis descriptions
+    int axesCount;          // Number of axes in the array
 };
 
 class AbstractVirtualDevice {

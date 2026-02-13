@@ -1,23 +1,11 @@
-#include "DeviceManager.h"
+#include "HidDeviceManager.h"
 #include "TinyUsbGamepadDevice.h"
 #include "tusb.h"
 #include <cstring>
 #include <algorithm>
 
-// Global DeviceManager instance for TinyUSB callbacks
-static DeviceManager* g_deviceManager = nullptr;
-
-// Global accessor functions
+// Helper function for USB mounting status
 extern "C" {
-    DeviceManager* getDeviceManager() {
-        return g_deviceManager;
-    }
-
-    void setDeviceManager(DeviceManager* manager) {
-        g_deviceManager = manager;
-    }
-
-    // Check if USB device is mounted and ready
     bool isUsbMounted(void) {
         return tud_mounted();
     }
@@ -26,7 +14,7 @@ extern "C" {
 // String indices 0-3 are reserved: 0=Language, 1=Manufacturer, 2=Product, 3=Serial
 #define FIRST_INTERFACE_STRING_INDEX 4
 
-DeviceManager::DeviceManager()
+HidDeviceManager::HidDeviceManager()
     : m_vendorId(0x1209),           // Default: pid.codes (open source VID)
       m_productId(0x0003),          // Default: Custom PID
       m_manufacturer("InputProxy"),
@@ -43,32 +31,32 @@ DeviceManager::DeviceManager()
     }
 }
 
-DeviceManager& DeviceManager::vendorId(uint16_t vid) {
+AbstractDeviceManager* HidDeviceManager::vendorId(uint16_t vid) {
     m_vendorId = vid;
-    return *this;
+    return this;
 }
 
-DeviceManager& DeviceManager::productId(uint16_t pid) {
+AbstractDeviceManager* HidDeviceManager::productId(uint16_t pid) {
     m_productId = pid;
-    return *this;
+    return this;
 }
 
-DeviceManager& DeviceManager::manufacturer(const std::string& name) {
+AbstractDeviceManager* HidDeviceManager::manufacturer(const std::string& name) {
     m_manufacturer = name;
-    return *this;
+    return this;
 }
 
-DeviceManager& DeviceManager::productName(const std::string& name) {
+AbstractDeviceManager* HidDeviceManager::productName(const std::string& name) {
     m_productName = name;
-    return *this;
+    return this;
 }
 
-DeviceManager& DeviceManager::serialNumber(const std::string& serial) {
+AbstractDeviceManager* HidDeviceManager::serialNumber(const std::string& serial) {
     m_serialNumber = serial;
-    return *this;
+    return this;
 }
 
-DeviceManager::~DeviceManager() {
+HidDeviceManager::~HidDeviceManager() {
     // Cleanup all occupied sockets
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         if (deviceSockets[i].occupied) {
@@ -77,7 +65,7 @@ DeviceManager::~DeviceManager() {
     }
 }
 
-void DeviceManager::allocateInterface(UsbDevice& info, uint8_t socketIndex) {
+void HidDeviceManager::allocateInterface(UsbDevice& info, uint8_t socketIndex) {
     // Assign interface numbers based on socket index for deterministic allocation
     // Socket 0 → Interface 0, Socket 1 → Interface 1, etc.
     info.interfaceNum = socketIndex;
@@ -89,14 +77,14 @@ void DeviceManager::allocateInterface(UsbDevice& info, uint8_t socketIndex) {
     info.stringIndex = FIRST_INTERFACE_STRING_INDEX + socketIndex;
 }
 
-void DeviceManager::cleanupDevice(UsbDevice& info) {
+void HidDeviceManager::cleanupDevice(UsbDevice& info) {
     if (info.device) {
         delete info.device;
         info.device = nullptr;
     }
 }
 
-bool DeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device, const std::string& name, DeviceType deviceType, uint8_t axesCount) {
+bool HidDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device, const std::string& name, DeviceType deviceType, uint8_t axesCount) {
     // Validate socket index
     if (socketIndex >= MAX_DEVICE_SOCKETS) {
         return false;
@@ -129,7 +117,7 @@ bool DeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* devic
     return true;
 }
 
-bool DeviceManager::unplugDevice(uint8_t socketIndex) {
+bool HidDeviceManager::unplugDevice(uint8_t socketIndex) {
     // Validate socket index
     if (socketIndex >= MAX_DEVICE_SOCKETS) {
         return false;
@@ -151,28 +139,28 @@ bool DeviceManager::unplugDevice(uint8_t socketIndex) {
     return true;
 }
 
-bool DeviceManager::isSocketOccupied(uint8_t socketIndex) const {
+bool HidDeviceManager::isSocketOccupied(uint8_t socketIndex) const {
     if (socketIndex >= MAX_DEVICE_SOCKETS) {
         return false;
     }
     return deviceSockets[socketIndex].occupied;
 }
 
-AbstractVirtualDevice* DeviceManager::getDevice(uint8_t socketIndex) {
-    if (socketIndex >= MAX_DEVICE_SOCKETS || !deviceSockets[socketIndex].occupied) {
+AbstractVirtualDevice* HidDeviceManager::getDevice(int socketIndex) {
+    if (socketIndex < 0 || socketIndex >= MAX_DEVICE_SOCKETS || !deviceSockets[socketIndex].occupied) {
         return nullptr;
     }
     return deviceSockets[socketIndex].device;
 }
 
-UsbDevice* DeviceManager::getDeviceInfo(uint8_t socketIndex) {
+UsbDevice* HidDeviceManager::getDeviceInfo(uint8_t socketIndex) {
     if (socketIndex >= MAX_DEVICE_SOCKETS || !deviceSockets[socketIndex].occupied) {
         return nullptr;
     }
     return &deviceSockets[socketIndex];
 }
 
-UsbDevice* DeviceManager::getDeviceByInterface(uint8_t interfaceNum) {
+UsbDevice* HidDeviceManager::getDeviceByInterface(uint8_t interfaceNum) {
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         if (deviceSockets[i].occupied && deviceSockets[i].interfaceNum == interfaceNum) {
             return &deviceSockets[i];
@@ -181,17 +169,17 @@ UsbDevice* DeviceManager::getDeviceByInterface(uint8_t interfaceNum) {
     return nullptr;
 }
 
-void DeviceManager::setAxis(uint8_t socketIndex, int axis, int value) {
-    if (socketIndex >= MAX_DEVICE_SOCKETS || !deviceSockets[socketIndex].occupied) {
+void HidDeviceManager::setAxis(int socketIndex, int axis, int value) {
+    if (socketIndex < 0 || socketIndex >= MAX_DEVICE_SOCKETS || !deviceSockets[socketIndex].occupied) {
         return;
     }
-    
+
     if (deviceSockets[socketIndex].device) {
         deviceSockets[socketIndex].device->setAxis(axis, value);
     }
 }
 
-size_t DeviceManager::getOccupiedCount() const {
+size_t HidDeviceManager::getOccupiedCount() const {
     size_t count = 0;
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         if (deviceSockets[i].occupied) {
@@ -201,7 +189,7 @@ size_t DeviceManager::getOccupiedCount() const {
     return count;
 }
 
-bool DeviceManager::init() {
+bool HidDeviceManager::init() {
     // Initialize all occupied devices
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         if (deviceSockets[i].occupied && deviceSockets[i].device) {
@@ -213,7 +201,7 @@ bool DeviceManager::init() {
     return true;
 }
 
-void DeviceManager::update() {
+void HidDeviceManager::update() {
     // Update all occupied devices
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         if (deviceSockets[i].occupied && deviceSockets[i].device) {
@@ -222,7 +210,7 @@ void DeviceManager::update() {
     }
 }
 
-void DeviceManager::generateConfigurationDescriptor() {
+void HidDeviceManager::generateConfigurationDescriptor() {
     configDescriptorBuffer.clear();
     
     // Count occupied interfaces
@@ -322,14 +310,14 @@ void DeviceManager::generateConfigurationDescriptor() {
     }
 }
 
-const uint8_t* DeviceManager::getConfigurationDescriptor(uint16_t* length) {
+const uint8_t* HidDeviceManager::getConfigurationDescriptorWithLength(uint16_t* length) {
     if (length) {
         *length = configDescriptorBuffer.size();
     }
     return configDescriptorBuffer.data();
 }
 
-const uint8_t* DeviceManager::getDeviceReportDescriptor(uint8_t interfaceNum, uint16_t* length) {
+const uint8_t* HidDeviceManager::getDeviceReportDescriptor(uint8_t interfaceNum, uint16_t* length) {
     UsbDevice* info = getDeviceByInterface(interfaceNum);
     if (!info) {
         if (length) *length = 0;
@@ -356,7 +344,7 @@ const uint8_t* DeviceManager::getDeviceReportDescriptor(uint8_t interfaceNum, ui
     return nullptr;
 }
 
-const char* DeviceManager::getInterfaceString(uint8_t stringIndex) const {
+const char* HidDeviceManager::getInterfaceString(uint8_t stringIndex) const {
     // String indices 0-3 are reserved, interface strings start at FIRST_INTERFACE_STRING_INDEX
     if (stringIndex < FIRST_INTERFACE_STRING_INDEX) {
         return nullptr;
@@ -372,20 +360,10 @@ const char* DeviceManager::getInterfaceString(uint8_t stringIndex) const {
 }
 
 // ==============================================================================
-// TinyUSB Callback Functions (extern "C" for TinyUSB)
+// AbstractDeviceManager Interface Implementation (USB Descriptor Callbacks)
 // ==============================================================================
 
-extern "C" {
-
-// String Descriptors
-enum {
-    STRID_LANGID = 0,
-    STRID_MANUFACTURER,
-    STRID_PRODUCT,
-    STRID_SERIAL,
-};
-
-// Dynamic Device Descriptor - updated with DeviceManager values
+// Device descriptor - dynamically updated with configured VID/PID
 static tusb_desc_device_t desc_device = {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
@@ -397,150 +375,92 @@ static tusb_desc_device_t desc_device = {
     .idVendor           = 0x1209,  // Default: pid.codes (open source VID)
     .idProduct          = 0x0003,  // Default: Custom PID
     .bcdDevice          = 0x0200,  // Device version 2.0
-    .iManufacturer      = STRID_MANUFACTURER,
-    .iProduct           = STRID_PRODUCT,
-    .iSerialNumber      = STRID_SERIAL,
+    .iManufacturer      = 1,       // String index 1
+    .iProduct           = 2,       // String index 2
+    .iSerialNumber      = 3,       // String index 3
     .bNumConfigurations = 0x01
 };
 
-// Invoked when received GET DEVICE DESCRIPTOR
-uint8_t const * tud_descriptor_device_cb(void) {
-    // Update device descriptor with DeviceManager values
-    DeviceManager* manager = getDeviceManager();
-    if (manager) {
-        desc_device.idVendor = manager->getVendorId();
-        desc_device.idProduct = manager->getProductId();
-    }
-    return (uint8_t const *) &desc_device;
+uint8_t const* HidDeviceManager::getDeviceDescriptor() {
+    // Update VID/PID before returning
+    desc_device.idVendor = m_vendorId;
+    desc_device.idProduct = m_productId;
+    return (uint8_t const*)&desc_device;
 }
 
-// Invoked when received GET CONFIGURATION DESCRIPTOR
-uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
-    (void) index;
-    
-    // Use DeviceManager's dynamically generated descriptor
-    DeviceManager* manager = getDeviceManager();
-    if (manager) {
-        uint16_t length;
-        const uint8_t* desc = manager->getConfigurationDescriptor(&length);
-        if (desc && length > 0) {
-            return desc;
-        }
-    }
-    
-    return nullptr;
+uint8_t const* HidDeviceManager::getConfigurationDescriptor() {
+    return configDescriptorBuffer.data();
 }
 
-// Language descriptor (index 0)
-static const char language_desc[] = { 0x09, 0x04 };  // English (US)
+uint8_t const* HidDeviceManager::getHidReportDescriptor(uint8_t itf) {
+    uint16_t length;
+    return getDeviceReportDescriptor(itf, &length);
+}
 
-static uint16_t _desc_str[64];
+uint16_t HidDeviceManager::getHidReportDescriptorLength(uint8_t itf) {
+    uint16_t length = 0;
+    getDeviceReportDescriptor(itf, &length);
+    return length;
+}
 
-// Invoked when received GET STRING DESCRIPTOR request
-uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
-    (void) langid;
+char const* HidDeviceManager::getStringDescriptor(uint8_t index, uint16_t langid) {
+    (void)langid;
 
+    // String indices for USB descriptors
+    enum {
+        STRID_LANGID = 0,
+        STRID_MANUFACTURER = 1,
+        STRID_PRODUCT = 2,
+        STRID_SERIAL = 3,
+    };
+
+    static uint16_t _desc_str[64];
     uint8_t chr_count;
-    const char* str = NULL;
+    const char* str = nullptr;
 
-    if (index == 0) {
-        memcpy(&_desc_str[1], language_desc, 2);
-        chr_count = 1;
-    } else if (index == STRID_MANUFACTURER) {
-        // Manufacturer string from DeviceManager
-        DeviceManager* manager = getDeviceManager();
-        str = manager ? manager->getManufacturer().c_str() : "InputProxy";
-    } else if (index == STRID_PRODUCT) {
-        // Product string from DeviceManager
-        DeviceManager* manager = getDeviceManager();
-        str = manager ? manager->getProductName().c_str() : "InputProxy Device";
-    } else if (index == STRID_SERIAL) {
-        // Serial string from DeviceManager
-        DeviceManager* manager = getDeviceManager();
-        str = manager ? manager->getSerialNumber().c_str() : "000000";
-    } else {
-        // Dynamic interface string descriptors
-        DeviceManager* manager = getDeviceManager();
-        if (manager) {
-            str = manager->getInterfaceString(index);
-        }
+    switch (index) {
+        case STRID_LANGID:
+            // Language ID - English (US)
+            memcpy(&_desc_str[1], "\x09\x04", 2);
+            chr_count = 1;
+            _desc_str[0] = (TUSB_DESC_STRING << 8) | (2 * chr_count + 2);
+            return (char const*)_desc_str;
+
+        case STRID_MANUFACTURER:
+            str = m_manufacturer.c_str();
+            break;
+
+        case STRID_PRODUCT:
+            str = m_productName.c_str();
+            break;
+
+        case STRID_SERIAL:
+            str = m_serialNumber.c_str();
+            break;
+
+        default:
+            // Check if it's an interface string (indices 4+)
+            str = getInterfaceString(index);
+            if (str == nullptr) {
+                return nullptr;
+            }
+            break;
     }
 
-    if (index != 0) {
-        if (str == NULL) {
-            return NULL;
-        }
+    if (str == nullptr) {
+        return nullptr;
+    }
 
-        // Convert ASCII string to UTF-16
-        chr_count = strlen(str);
-        if (chr_count > 63) chr_count = 63;
+    // Convert ASCII string to UTF-16
+    chr_count = strlen(str);
+    if (chr_count > 63) chr_count = 63;
 
-        for (uint8_t i = 0; i < chr_count; i++) {
-            _desc_str[1 + i] = str[i];
-        }
+    for (uint8_t i = 0; i < chr_count; i++) {
+        _desc_str[1 + i] = str[i];
     }
 
     // First byte is length (including header), second byte is string type
     _desc_str[0] = (TUSB_DESC_STRING << 8) | (2 * chr_count + 2);
 
-    return _desc_str;
+    return (char const*)_desc_str;
 }
-
-// Invoked when received GET HID REPORT DESCRIPTOR
-uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
-    DeviceManager* manager = getDeviceManager();
-    if (manager) {
-        uint16_t length;
-        const uint8_t* desc = manager->getDeviceReportDescriptor(itf, &length);
-        if (desc && length > 0) {
-            return desc;
-        }
-    }
-    return NULL;
-}
-
-// Invoked when received GET_REPORT control request
-uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type,
-                               uint8_t* buffer, uint16_t reqlen) {
-    DeviceManager* manager = getDeviceManager();
-    if (manager) {
-        UsbDevice* info = manager->getDeviceByInterface(itf);
-        if (info && info->device) {
-            if (info->deviceType == DeviceType::KEYBOARD) {
-                TinyUsbKeyboardDevice* keyboard = static_cast<TinyUsbKeyboardDevice*>(info->device);
-                return keyboard->getReport(report_id, report_type, buffer, reqlen);
-            } else if (info->deviceType == DeviceType::MOUSE) {
-                TinyUsbMouseDevice* mouse = static_cast<TinyUsbMouseDevice*>(info->device);
-                return mouse->getReport(report_id, report_type, buffer, reqlen);
-            } else if (info->deviceType == DeviceType::GAMEPAD) {
-                TinyUsbGamepadDevice* gamepad = static_cast<TinyUsbGamepadDevice*>(info->device);
-                return gamepad->getReport(report_id, report_type, buffer, reqlen);
-            }
-        }
-    }
-    return 0;
-}
-
-// Invoked when received SET_REPORT control request or
-// received data on OUT endpoint (Report ID = 0, Type = 0)
-void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type,
-                           uint8_t const* buffer, uint16_t bufsize) {
-    DeviceManager* manager = getDeviceManager();
-    if (manager) {
-        UsbDevice* info = manager->getDeviceByInterface(itf);
-        if (info && info->device) {
-            if (info->deviceType == DeviceType::KEYBOARD) {
-                TinyUsbKeyboardDevice* keyboard = static_cast<TinyUsbKeyboardDevice*>(info->device);
-                keyboard->setReport(report_id, report_type, buffer, bufsize);
-            } else if (info->deviceType == DeviceType::MOUSE) {
-                TinyUsbMouseDevice* mouse = static_cast<TinyUsbMouseDevice*>(info->device);
-                mouse->setReport(report_id, report_type, buffer, bufsize);
-            } else if (info->deviceType == DeviceType::GAMEPAD) {
-                TinyUsbGamepadDevice* gamepad = static_cast<TinyUsbGamepadDevice*>(info->device);
-                gamepad->setReport(report_id, report_type, buffer, bufsize);
-            }
-        }
-    }
-}
-
-} // extern "C"

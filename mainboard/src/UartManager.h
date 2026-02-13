@@ -6,33 +6,90 @@
 #include <cerrno>
 #include <cstdint>
 #include <functional>
+#include <vector>
+#include <string>
+
+enum UART_CHANNEL {
+    UART0,
+    UART1,
+    UART2,
+    UART3,
+    UART4,
+    UART5
+};
 
 class UartManager {
   private:
-    char*devicePath = (char*)"/dev/serial0";
+    std::vector<std::string> devicePaths;
+    std::string activeDevicePath;
     int uartFileHandle;
     char buffer[10*1024];
-    
+
   public:
-    UartManager() : uartFileHandle(-1) {}
+    UartManager(UART_CHANNEL channel = UART0) : uartFileHandle(-1) {
+        switch(channel) {
+            case UART0:
+                devicePaths = {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
+                break;
+            case UART1:
+                devicePaths = {"/dev/serial1", "/dev/ttyAMA1", "/dev/ttyS1"};
+                break;
+            case UART2:
+                devicePaths = {"/dev/serial2", "/dev/ttyAMA2", "/dev/ttyS2"};
+                break;
+            case UART3:
+                devicePaths = {"/dev/serial3", "/dev/ttyAMA3", "/dev/ttyS3"};
+                break;
+            case UART4:
+                devicePaths = {"/dev/serial4", "/dev/ttyAMA4", "/dev/ttyS4"};
+                break;
+            case UART5:
+                devicePaths = {"/dev/serial5", "/dev/ttyAMA5", "/dev/ttyS5"};
+                break;
+            default:
+                devicePaths = {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
+                break;
+        }
+    }
 
     int getUartFd() const {
         return uartFileHandle;
     }
 
+    const std::string& getActiveDevicePath() const {
+        return activeDevicePath;
+    }
+
     bool testHasUartDevice() {
-        int fd = open(devicePath, O_RDWR | O_NOCTTY | O_SYNC);
-        if (fd < 0) {
-            return false;
+        for (const auto& path : devicePaths) {
+            int fd = open(path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+            if (fd >= 0) {
+                close(fd);
+                activeDevicePath = path;
+                return true;
+            }
         }
-        close(fd);
-        return true;
+        return false;
     }
 
     bool configureUart() {
-        uartFileHandle = open(devicePath, O_RDWR | O_NOCTTY | O_SYNC);
+        // Try each device path until one succeeds
+        for (const auto& path : devicePaths) {
+            uartFileHandle = open(path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+            if (uartFileHandle >= 0) {
+                activeDevicePath = path;
+                std::cout << "Successfully opened UART at " << path << std::endl;
+                break;
+            }
+        }
+
         if (uartFileHandle < 0) {
-            std::cerr << "Error opening " << devicePath << ": " << strerror(errno) << std::endl;
+            std::cerr << "Error opening UART. Tried paths: ";
+            for (size_t i = 0; i < devicePaths.size(); ++i) {
+                std::cerr << devicePaths[i];
+                if (i < devicePaths.size() - 1) std::cerr << ", ";
+            }
+            std::cerr << std::endl;
             return false;
         }
 

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include "tusb.h"
+#include "../shared/shared.h"
 
 // HID Report ID for gamepad
 #define REPORT_ID_GAMEPAD 1
@@ -15,68 +16,13 @@
 #define GAMEPAD_MAX_BUTTONS 32
 #define GAMEPAD_MAX_AXES    8
 
-// Gamepad button codes (0-31) - used directly as button indices
-// Buttons 0-31 map to gamepad buttons 1-32
-
-// Gamepad axis bitmask flags
-#define FLAG_MASK_GAMEPAD_AXIS_LX     0x01  // Bit 0: Left stick X
-#define FLAG_MASK_GAMEPAD_AXIS_LY     0x02  // Bit 1: Left stick Y
-#define FLAG_MASK_GAMEPAD_AXIS_LZ     0x04  // Bit 2: Left stick Z
-#define FLAG_MASK_GAMEPAD_AXIS_RX     0x08  // Bit 3: Right stick X
-#define FLAG_MASK_GAMEPAD_AXIS_RY     0x10  // Bit 4: Right stick Y
-#define FLAG_MASK_GAMEPAD_AXIS_RZ     0x20  // Bit 5: Right stick Z
-#define FLAG_MASK_GAMEPAD_AXIS_DIAL   0x40  // Bit 6: Dial
-#define FLAG_MASK_GAMEPAD_AXIS_SLIDER 0x80  // Bit 7: Slider
-
-// Gamepad axis codes (for setAxis)
-// Values are 0-1000, mapped to 0-255 for HID (with 127/500 as center for bidirectional axes)
-// For bidirectional axes, MINUS sets 0-127 range, PLUS sets 127-255 range
-
-// Left stick X (bidirectional)
-#define GAMEPAD_AXIS_LX        100  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_LX_MINUS  110  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_LX_PLUS   111  // Positive direction: 0-1000 -> 127-255
-
-// Left stick Y (bidirectional)
-#define GAMEPAD_AXIS_LY        101  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_LY_MINUS  112  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_LY_PLUS   113  // Positive direction: 0-1000 -> 127-255
-
-// Left stick Z (bidirectional)
-#define GAMEPAD_AXIS_LZ        102  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_LZ_MINUS  114  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_LZ_PLUS   115  // Positive direction: 0-1000 -> 127-255
-
-// Right stick X (bidirectional)
-#define GAMEPAD_AXIS_RX        103  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_RX_MINUS  116  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_RX_PLUS   117  // Positive direction: 0-1000 -> 127-255
-
-// Right stick Y (bidirectional)
-#define GAMEPAD_AXIS_RY        104  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_RY_MINUS  118  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_RY_PLUS   119  // Positive direction: 0-1000 -> 127-255
-
-// Right stick Z (bidirectional)
-#define GAMEPAD_AXIS_RZ        105  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_RZ_MINUS  120  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_RZ_PLUS   121  // Positive direction: 0-1000 -> 127-255
-
-// Dial (bidirectional)
-#define GAMEPAD_AXIS_DIAL        106  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_DIAL_MINUS  122  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_DIAL_PLUS   123  // Positive direction: 0-1000 -> 127-255
-
-// Slider (bidirectional)
-#define GAMEPAD_AXIS_SLIDER        107  // Full range: 0-1000 -> 0-255
-#define GAMEPAD_AXIS_SLIDER_MINUS  124  // Negative direction: 0-1000 -> 0-127
-#define GAMEPAD_AXIS_SLIDER_PLUS   125  // Positive direction: 0-1000 -> 127-255
-
-// Hat switch codes (D-pad as buttons)
-#define GAMEPAD_HAT_UP      200
-#define GAMEPAD_HAT_DOWN    201
-#define GAMEPAD_HAT_LEFT    202
-#define GAMEPAD_HAT_RIGHT   203
+// Gamepad axis codes and button codes are now defined in shared.h as HID_GAMEPAD_AXES enum
+// Use the enum values from shared.h:
+//   - GAMEPAD_HAT_UP, GAMEPAD_HAT_DOWN, GAMEPAD_HAT_LEFT, GAMEPAD_HAT_RIGHT (0-3)
+//   - GAMEPAD_BTN_1 through GAMEPAD_BTN_32 (4-35)
+//   - GAMEPAD_AXIS_LX_MINUS, GAMEPAD_AXIS_LX_PLUS, etc. (36-51)
+// Note: Axis values are 0-1000, mapped to 0-255 for HID (with 127 as center)
+//       MINUS direction: 0-1000 -> 0-127, PLUS direction: 0-1000 -> 127-255
 
 // Maximum gamepads supported
 #ifndef MAX_GAMEPADS
@@ -159,29 +105,19 @@ private:
     uint16_t hidDescriptorSize;
     uint16_t reportSize;  // Actual size of report to send
 
-    // Axis mapping: maps axis code (GAMEPAD_AXIS_LX, etc.) to report index
+    // Axis mapping: maps axis code (0-7) to report index
     int8_t axisCodeToReportIndex[8];  // -1 if axis not enabled
 
-    // Continuous axis index mapping: maps continuous index (1, 2, 3...) to actual control code
-    // This allows external code to use simple continuous indexes
-    struct AxisMapping {
-        int code;  // The actual code (button index, axis code, hat code)
-    };
-    AxisMapping* continuousAxisMap;  // Dynamically allocated based on config
-    int continuousAxisCount;
-
-    // 512-byte buffer for AxesDescription (cast to struct with char** and axis names)
-    uint8_t axesDescriptionBuffer[512];
-    bool axesDescriptionInitialized;
+    // Dynamic axes description based on configuration
+    AxisDescription* axesDescArray;  // Dynamically allocated
+    int axesDescCount;
 
     // Internal helpers
+    void buildAxesDescription();
     void buildHidDescriptor();
-    void buildAxisMapping();
-    void buildAxesDescriptionBuffer();
     void sendReport();
     void updateHatFromButtons();
     uint8_t calculateHatValue() const;
-    uint8_t getAxisReportIndex(uint8_t axisCode) const;
 };
 
 // Forward declaration

@@ -1,5 +1,5 @@
 #include "TinyUsbMouseDevice.h"
-#include "DeviceManager.h"
+#include "HidDeviceManager.h"
 #include "tusb.h"
 
 // HID Report Descriptor for Mouse Interface
@@ -219,28 +219,23 @@ void TinyUsbMouseDevice::setReport(uint8_t report_id, hid_report_type_t report_t
     // If needed in the future, implement here
 }
 
-// Static axis names for mouse (stored in ROM, not RAM)
-static const char* mouseAxisNames[] = {
-    "",                  // Index 0 (unused - axes start from 1)
-    "Button Left",       // Index 1
-    "Button Right",      // Index 2
-    "Button Middle",     // Index 3
-    "Button Back",       // Index 4
-    "Button Forward",    // Index 5
-    "X Axis Left",       // Index 6
-    "X Axis Right",      // Index 7
-    "Y Axis Up",         // Index 8
-    "Y Axis Down",       // Index 9
-    "Wheel Down",        // Index 10
-    "Wheel Up",          // Index 11
-    "H-Wheel Left",      // Index 12
-    "H-Wheel Right"      // Index 13
-};
-
 AxesDescription TinyUsbMouseDevice::axesDescription() {
+    // Build static AxisDescription array (only once)
+    static AxisDescription mouseAxes[15];
+    static bool initialized = false;
+
+    if (!initialized) {
+        // Map all 15 mouse axes (0-14) with their names and indices
+        for (int i = 0; i < 15; i++) {
+            mouseAxes[i].name = (char*)MOUSE_AXES_NAMES[i];
+            mouseAxes[i].axisIndex = i;
+        }
+        initialized = true;
+    }
+
     AxesDescription desc;
-    desc.axisNames = (char**)mouseAxisNames;
-    desc.axesCount = 14; // 0-13 (index 0 unused)
+    desc.axes = mouseAxes;
+    desc.axesCount = 15; // 0-14 (index 0 unused)
     return desc;
 }
 
