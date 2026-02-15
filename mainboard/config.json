@@ -1,0 +1,127 @@
+{
+    "emulation_host":[
+        {
+            "id": "7I2GP{provided by pico}",
+            "mode": "HID_MODE",
+            "active":true
+        }
+    ],
+    "emulated_devices":[
+        {
+            "id": "vrt_keyboard1{auto_generated}",
+            "name": "Virtual Keyboard",
+            "type": "hid_keyboard",
+            "host": "7I2GP",
+            "config":{}
+        },
+        {
+            "id": "vrt_mouse1{auto_generated}",
+            "name": "Virtual Mouse",
+            "type": "hid_mouse",
+            "host": "7I2GP",
+            "config":{}
+        },
+        {
+            "id": "vrt_gamepad1{auto_generated}",
+            "name": "Virtual Hid Gamepad",
+            "type": "hid_gamepad",
+            "host": "7I2GP",
+            "config":{
+                "buttons": 12,
+                "hat": true,
+                "axes": ["AXIS_LX", "AXIS_LY", "AXIS_LZ", "AXIS_RX", "AXIS_RY", "AXIS_RZ", "AXIS_DIAL", "AXIS_SLIDER"]
+            }
+        }
+    ],
+    "logical_devices":[
+        {
+            "id":"inp_kbd_1{auto_generated}",
+            "name":"keyboard input 1{user_provided}",
+            "axes":[
+                "KEY_UNUSED_0", "KEY_UNUSED_1","KEY_UNUSED_2","KEY_UNUSED_3","KEY_UNUSED_4",
+                "KEY_A", "KEY_B","KEY_C", "KEY_D", "KEY_E"
+                //all other keys for keyboard. we copy axes names from the real input device when connect it here
+            ]
+        },
+        {
+            "id":"inp_mouse_2",
+            "name":"Mouse input 2",
+            "axes":[
+                "REL_X+","REL_X-","REL_Y+","REL_Y-","MOUSE_BUTTON_LEFT","MOUSE_BUTTON_RIGHT","MOUSE_BUTTON_MIDDLE"
+            ]
+        }
+    ],
+    "real_devices":[
+        {
+            "id":"usb_gmpd_1{auto_generated_on_first_connection}",
+            "deviceId":"{vendor}/{product}/{serial}/{capabilities}",
+            "deviceType":"gamepad",
+            "axes":["BTN_1","BTN_2","BTN_3","HAT_X-","HAT_X+","HAT_Y-","HAT_Y+"],
+            "rename_axes":[
+                {"old":"DEVICE_BTN2","new":"BTN_1"},
+                {"old":"DEVICE_BTN3","new":"BTN_2"}
+            ],
+            "active": true
+        }
+    ],
+    "ambiguous_device_ids":["23232/32333/4343/22"],
+    "real_to_logical_mapping":[
+        {
+        "real":"usb_gmpd_1",
+        "logical":"inp_mouse_2"
+        }
+    ],
+    "profiles":[
+        {
+            "name":"default",
+            "enabled":true
+        },
+        {
+            "name":"starcraft",
+            "enabled":false
+        }
+    ],
+    "mapping":[
+        {
+            "profile":"default",
+            "type":"simple_mapping", //direct mapping of one axis to other axis
+            "pairs":[
+                "inp_mouse_2:MOUSE_BUTTON_LEFT|vrt_mouse1:MOUSE_BUTTON_LEFT",
+                "inp_mouse_2:MOUSE_BUTTON_RIGHT|vrt_mouse1:MOUSE_BUTTON_RIGHT"
+            ],
+            "turbo":{
+                "enabled": true,
+                "rate": 30,
+                "initialDelay": 100
+            },
+            "toggle": false,
+            "propagate":true,
+            "priority":2
+        },
+        {
+            "profile":"default",
+            "type":"match_mapping", //map all axes from one device to all axes with same names in another device, except excludedAxes
+            "from":"inp_kbd_1",
+            "to":"vrt_keyboard1",
+            "excludedAxes":["KEY_D"]
+        },
+        {
+            "profile":"default",
+            "type":"hotkey",
+            "settings":"inp_kbd_1:KEY_CTRL+inp_kbd_1:KEY_ALT+inp_kbd_1:KEY_A",
+            "mode":"press",//other option - "release"
+            "action":[
+                {
+                    "type":"event",//other options - lua script or other... out of scope for right now
+                    "destination":"vrt_keyboard1:KEY_F13"
+                }
+            ]
+        },
+        { //backward mapping to provide force feedback or keyboard led
+            "profile":"default",
+            "type":"match_mapping", //map all axes from one device to all axes with same names in another device, except excludedAxes
+            "from":"vrt_keyboard1",
+            "to":"inp_kbd_1"//all real devices assigned to this logical device will receive the event
+        }
+    ]
+}
