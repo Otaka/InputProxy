@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <string>
 
 const char* HID_GAMEPAD_AXES_NAMES[52] = {
     // Hat switch / D-pad (0-3)
@@ -276,3 +277,65 @@ const char* KEYBOARD_AXES_NAMES[258] = {
     "KEY_UNUSED_240", "KEY_UNUSED_241", "KEY_UNUSED_242", "KEY_UNUSED_243", "KEY_UNUSED_244", "KEY_UNUSED_245", "KEY_UNUSED_246", "KEY_UNUSED_247", // 241-248: HID keycodes 0xF0-0xF7 (undefined)
     "KEY_UNUSED_248", "KEY_UNUSED_249", "KEY_UNUSED_250", "KEY_UNUSED_251", "KEY_UNUSED_252", "KEY_UNUSED_253", "KEY_UNUSED_254", "KEY_UNUSED_255"  // 249-256: HID keycodes 0xF8-0xFF (undefined)
 };
+
+// --- AxisTable ---
+
+void AxisTable::addEntry(const std::string& name, int index) {
+    entries.push_back({name, index});
+    nameToIndex[name] = index;
+    indexToName[index] = name;
+}
+
+int AxisTable::getIndex(const std::string& name) const {
+    auto it = nameToIndex.find(name);
+    return (it != nameToIndex.end()) ? it->second : -1;
+}
+
+std::string AxisTable::getName(int index) const {
+    auto it = indexToName.find(index);
+    return (it != indexToName.end()) ? it->second : std::string();
+}
+
+bool AxisTable::hasName(const std::string& name) const {
+    return nameToIndex.count(name) > 0;
+}
+
+bool AxisTable::hasIndex(int index) const {
+    return indexToName.count(index) > 0;
+}
+
+AxisTable AxisTable::forHidGamepad() {
+    AxisTable t;
+    for (int i = 0; i < 52; i++) {
+        if (HID_GAMEPAD_AXES_NAMES[i] && HID_GAMEPAD_AXES_NAMES[i][0] != '\0')
+            t.addEntry(HID_GAMEPAD_AXES_NAMES[i], i);
+    }
+    return t;
+}
+
+AxisTable AxisTable::forXbox360() {
+    AxisTable t;
+    for (int i = 0; i < 26; i++) {
+        if (XBOX360_AXES_NAMES[i] && XBOX360_AXES_NAMES[i][0] != '\0')
+            t.addEntry(XBOX360_AXES_NAMES[i], i);
+    }
+    return t;
+}
+
+AxisTable AxisTable::forMouse() {
+    AxisTable t;
+    for (int i = 1; i < 15; i++) {  // index 0 is unused ("")
+        if (MOUSE_AXES_NAMES[i] && MOUSE_AXES_NAMES[i][0] != '\0')
+            t.addEntry(MOUSE_AXES_NAMES[i], i);
+    }
+    return t;
+}
+
+AxisTable AxisTable::forKeyboard() {
+    AxisTable t;
+    for (int i = 0; i < 258; i++) {
+        if (KEYBOARD_AXES_NAMES[i] && KEYBOARD_AXES_NAMES[i][0] != '\0')
+            t.addEntry(KEYBOARD_AXES_NAMES[i], i);
+    }
+    return t;
+}

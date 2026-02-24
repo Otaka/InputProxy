@@ -388,4 +388,46 @@ extern const char* XBOX360_AXES_NAMES[26];
 extern const char* MOUSE_AXES_NAMES[15];
 extern const char* KEYBOARD_AXES_NAMES[258];
 
+#ifdef __cplusplus
+#include <string>
+#include <vector>
+#include <map>
+
+// A single axis entry: human-readable name and its integer index (from the enums above)
+struct AxisEntry {
+    std::string name;
+    int index;
+};
+
+// Bidirectional name<->index table for a device type.
+// For emulated devices it is built from the shared *_NAMES arrays.
+// For real devices it is built dynamically from evdev capabilities.
+class AxisTable {
+public:
+    void addEntry(const std::string& name, int index);
+
+    // Returns -1 if name not found
+    int getIndex(const std::string& name) const;
+
+    // Returns empty string if index not found
+    std::string getName(int index) const;
+
+    bool hasName(const std::string& name) const;
+    bool hasIndex(int index) const;
+
+    const std::vector<AxisEntry>& getEntries() const { return entries; }
+
+    // Build static tables from the shared *_NAMES arrays
+    static AxisTable forHidGamepad();
+    static AxisTable forXbox360();
+    static AxisTable forMouse();
+    static AxisTable forKeyboard();
+
+private:
+    std::vector<AxisEntry> entries;
+    std::map<std::string, int> nameToIndex;
+    std::map<int, std::string> indexToName;
+};
+#endif // __cplusplus
+
 #endif // SHARED_UTILS_H

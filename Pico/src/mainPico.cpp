@@ -10,7 +10,7 @@
 #include "pico/time.h"
 #include "pico/mutex.h"
 #include "tusb.h"
-
+#include "../shared/corocgo.h"
 #include "UartManagerPico.h"
 #include "../shared/simplerpc/simplerpc.h"
 #include "../shared/rpcinterface.h"
@@ -27,6 +27,7 @@
 #include "hardware/watchdog.h"
 
 using namespace simplerpc;
+using namespace corocgo;
 
 static UartManagerPico* uartManager = nullptr;
 
@@ -34,7 +35,7 @@ static UartManagerPico* uartManager = nullptr;
 static RpcManager<>* uartRpcManager = nullptr;
 static Pico2Main pico2MainRpcClient;
 static Main2Pico main2PicoRpcServer;
-
+std::vector<std::string>messagesToPrint;
 static bool ledState = false;
 
 // Device Manager - manages devices based on current mode (HID or XInput)
@@ -43,8 +44,8 @@ static AbstractDeviceManager* deviceManager = nullptr;
 // Persistent storage for configuration (mode, etc.)
 static PersistentStorage persistentStorage;
 
-// Flag to trigger reboot after mode change
-static volatile bool requiresReboot = false;
+static Channel<bool>*rebootChannel;
+static Channel<std::string>*logChannel;
 
 void initPicoLed() {
     stdio_init_all();
@@ -70,23 +71,6 @@ void rebootToBootsel() {
     reset_usb_boot(0, 0);
 }
 
-void usbAwareSleep(uint timeMs) {
-    // Sleep while processing USB tasks to keep the USB stack alive
-    const uint chunkMs = 5;  // Process USB every 5ms
-    uint chunks = timeMs / chunkMs;
-    uint remainder = timeMs % chunkMs;
-
-    for (uint i = 0; i < chunks; i++) {
-        tud_task();
-        sleep_ms(chunkMs);
-    }
-
-    if (remainder > 0) {
-        tud_task();
-        sleep_ms(remainder);
-    }
-}
-
 std::string generateRandomDeviceId() {
     const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const int charsetSize = sizeof(charset) - 1;
@@ -106,38 +90,6 @@ void handleUartMessage(const char* data, size_t length) {
         uartRpcManager->processInput(data, length);
     }
 }
-
-/*void initializeEmptyDeviceManager() {
-    // Get mode from storage (default to HID_MODE)
-    std::string modeStr = persistentStorage.get("mode");
-    DeviceMode currentMode = (modeStr == "xinput") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
-
-    if (currentMode == DeviceMode::XINPUT_MODE) {
-        // XInput mode: Create empty XInput manager
-        XinputDeviceManager* xinputManager = new XinputDeviceManager();
-        xinputManager->vendorId(0x045E)      // Microsoft VID
-                     ->productId(0x028E)      // Xbox 360 Controller PID
-                     ->manufacturer("Microsoft")
-                     ->productName("Xbox 360 Controller")
-                     ->serialNumber("000000");
-
-        deviceManager = xinputManager;
-    } else {
-        // HID mode: Create empty HID manager
-        HidDeviceManager* hidManager = new HidDeviceManager();
-        hidManager->vendorId(0x1209)           // pid.codes (open source VID)
-                 ->productId(0x0003)          // Custom PID
-                 ->manufacturer("InputProxy")
-                 ->productName("InputProxy Composite Device")
-                 ->serialNumber("20260118");
-
-        deviceManager = hidManager;
-    }
-
-    // Initialize the device manager (without any devices plugged)
-    setDeviceManager(deviceManager);
-    deviceManager->init();
-}*/
 
 bool initUartRpcSystem() {
     // Initialize UART RPC Manager for Mainboard communication
@@ -172,52 +124,26 @@ bool initUartRpcSystem() {
     };
 
     main2PicoRpcServer.rebootFlashMode = []() -> bool {
-        rebootToBootsel();
+        rebootChannel->sendExternalNoBlock(true);
         return true;
     };
 
     main2PicoRpcServer.reboot = []() {
-        requiresReboot = true;
+        rebootChannel->sendExternalNoBlock(false);
     };
 
     main2PicoRpcServer.setMode = [](uint8_t mode) {
         DeviceMode newMode = static_cast<DeviceMode>(mode);
 
-        // Check if device manager already exists
-        if (deviceManager) {
-            DeviceMode currentMode = deviceManager->getMode();
-
-            // If mode is already set (even to the same value), reboot
-            requiresReboot = true;
+        // If same as current mode, skip
+        if (deviceManager && deviceManager->getMode() == newMode) {
             return;
         }
 
-        // Create and initialize device manager based on requested mode
-        if (newMode == DeviceMode::XINPUT_MODE) {
-            // XInput mode: Create empty XInput manager
-            XinputDeviceManager* xinputManager = new XinputDeviceManager();
-            xinputManager->vendorId(0x045E)      // Microsoft VID
-                         ->productId(0x028E)      // Xbox 360 Controller PID
-                         ->manufacturer("Microsoft")
-                         ->productName("Xbox 360 Controller")
-                         ->serialNumber("000000");
-
-            deviceManager = xinputManager;
-        } else {
-            // HID mode: Create empty HID manager
-            HidDeviceManager* hidManager = new HidDeviceManager();
-            hidManager->vendorId(0x1209)           // pid.codes (open source VID)
-                     ->productId(0x0003)          // Custom PID
-                     ->manufacturer("InputProxy")
-                     ->productName("InputProxy Composite Device")
-                     ->serialNumber("20260118");
-
-            deviceManager = hidManager;
-        }
-
-        // Initialize the device manager (without any devices plugged)
-        setDeviceManager(deviceManager);
-        deviceManager->init();
+        // Different mode: persist and schedule reboot
+        persistentStorage.put("mode", newMode == DeviceMode::XINPUT_MODE ? "XINPUT" : "HID");
+        persistentStorage.flush();
+        rebootChannel->sendExternalNoBlock(false);
     };
 
     main2PicoRpcServer.getMode = []() -> uint8_t {
@@ -318,11 +244,12 @@ void reboot(){
     while(true) { tight_loop_contents(); }
 }
 
-int main() {
+int _main() {
     srand(to_us_since_boot(get_absolute_time()));
+    rebootChannel=makeChannel<bool>(1,1);
+    logChannel = makeChannel<std::string>(10);
 
     initPicoLed();
-
     // Initialize TinyUSB
     tusb_init();
 
@@ -341,36 +268,82 @@ int main() {
         persistentStorage.flush();
     }
 
+    // Initialize device manager from saved mode (default HID)
+    {
+        std::string savedMode = persistentStorage.get("mode");
+        DeviceMode bootMode = (savedMode == "XINPUT") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
+
+        if (bootMode == DeviceMode::XINPUT_MODE) {
+            XinputDeviceManager* xinputManager = new XinputDeviceManager();
+            xinputManager->vendorId(0x045E)
+                         ->productId(0x028E)
+                         ->manufacturer("Microsoft")
+                         ->productName("Xbox 360 Controller")
+                         ->serialNumber("000000");
+            deviceManager = xinputManager;
+        } else {
+            HidDeviceManager* hidManager = new HidDeviceManager();
+            hidManager->vendorId(0x1209)
+                     ->productId(0x0003)
+                     ->manufacturer("InputProxy")
+                     ->productName("InputProxy Composite Device")
+                     ->serialNumber("20260118");
+            deviceManager = hidManager;
+        }
+        setDeviceManager(deviceManager);
+        deviceManager->init();
+    }
+
     uartManager = new UartManagerPico(UartPort::UART_0);
     uartManager->onMessage(handleUartMessage);
 
     if (!initUartRpcSystem())
         return 1;
 
-    // Call onBoot in loop until success
-    bool bootSuccess = false;
-    while (!bootSuccess) {
-        bootSuccess = pico2MainRpcClient.onBoot(deviceId);
-        if (!bootSuccess) {
-            usbAwareSleep(300);
-        }
+    while (!pico2MainRpcClient.onBoot(deviceId)) {
+        sleep(300);
     }
 
-    // Device manager will be initialized via setMode RPC call
-    // Start without any mode set
+    //log coroutine
+    coro([]() {
+        while (true) {
+            auto [logLine, error] = logChannel->receive();
+            if (error)
+                break;
+            pico2MainRpcClient.debugPrint(logLine.c_str());
+        }
+    });
 
+    //reboot coroutine
+    coro([]() {
+        while (true) {
+            auto [rebootValue, error] = rebootChannel->receive();
+            if (error)
+                break;
+            if (rebootValue==true) {
+                rebootToBootsel();
+            } else {
+                reboot();
+            }
+        }
+    });
+
+    //every tick coroutine
     while (true) {
-        tud_task();
-
         // Update all devices through DeviceManager
         if (deviceManager) {
             deviceManager->update();
         }
 
-        // Check if reboot is required (after mode change)
-        if (requiresReboot) {
-            reboot();
-        }
+        //process usb tasks
+        tud_task();
+
+        coro_yield();
     }
+}
+
+int main() {
+    coro(_main);
+    scheduler_start();
     return 0;
 }

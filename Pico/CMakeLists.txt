@@ -15,6 +15,7 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
+
 set(sdkVersion 2.2.0)
 set(toolchainVersion 14_2_Rel1)
 set(picotoolVersion 2.2.0-a4)
@@ -41,6 +42,7 @@ add_executable(InputProxy
     src/PersistentStorage.cpp
     src/usb_descriptors.cpp
     ../shared/shared.cpp
+    ../shared/corocgo.cpp
    # src/UsbCdcManager.cpp
    # src/devices/usbCdc.cpp
     src/devices/AbstractVirtualDevice.cpp

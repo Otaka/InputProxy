@@ -8,6 +8,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <stdexcept>
 
 enum UART_CHANNEL {
     UART0,
@@ -47,8 +48,7 @@ class UartManager {
                 devicePaths = {"/dev/serial5", "/dev/ttyAMA5", "/dev/ttyS5"};
                 break;
             default:
-                devicePaths = {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
-                break;
+                throw std::invalid_argument("Unknown UART channel passed in constructor");
         }
     }
 

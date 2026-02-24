@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include "../../shared/shared.h"
 
 class EventLoop;
 
@@ -25,9 +26,8 @@ struct RealDevice {
     std::string evdevPath;                          // "/dev/input/eventX"
     int fd;                                         // evdev file descriptor
 
-    // Bidirectional axis/button mappings
-    std::map<std::string, int> axisName2Index;      // "ABS_X" -> 0, "BTN_A" -> 304, "ABS_X+" -> 10000, "ABS_X-" -> 10001
-    std::map<int, std::string> axisIndex2Name;      // 0 -> "ABS_X", 304 -> "BTN_A", 10000 -> "ABS_X+", 10001 -> "ABS_X-"
+    // Bidirectional axis/button mappings (built dynamically from evdev capabilities)
+    AxisTable axes;
 
     // Axis information (min/max/default values) - key is axis code
     std::map<int, AxisInfo> axisInfo;               // axis code -> AxisInfo

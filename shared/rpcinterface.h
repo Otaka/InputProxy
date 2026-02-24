@@ -46,6 +46,9 @@ struct Pico2Main {
     std::function<void(std::string)> debugPrint;
     std::function<bool(std::string)> onBoot;  // Called by Pico on boot with deviceId
 
+    // User-defined pointer for application context
+    void* userPointer = nullptr;
+
     // Provider ID must be unique
     static constexpr uint32_t providerId = 100;
 
@@ -72,6 +75,10 @@ struct Main2Pico {
     std::function<uint8_t()> getMode;  // Get current device mode: 0=HID, 1=XInput
     std::function<bool(int, DeviceConfiguration)> plugDevice;  // Plug a device into a slot
     std::function<bool(int)> unplugDevice;  // Unplug a device from a slot
+
+    // User-defined pointer for application context
+    void* userPointer = nullptr;
+
     static constexpr uint32_t providerId = 200;
 
     static constexpr auto methods = std::make_tuple(

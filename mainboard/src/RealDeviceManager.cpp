@@ -209,7 +209,7 @@ void RealDeviceManager::processDevicePath(const std::string& path) {
     }
 
     // Now generate device ID with axis count
-    int axisCount = device.axisName2Index.size();
+    int axisCount = device.axes.getEntries().size();
     std::string deviceId = generateDeviceId(id.vendor, id.product, serial, usbPath, name, axisCount);
 
     if (deviceId.find("Motion") != std::string::npos) {
@@ -312,8 +312,7 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
         for (int code = 0; code <= ABS_MAX; code++) {
             if (testBit(code, absBits)) {
                 std::string name = eventCodeToString(EV_ABS, code);
-                device.axisName2Index[name] = code;
-                device.axisIndex2Name[code] = name;
+                device.axes.addEntry(name, code);
 
                 // Read axis information (min, max, default)
                 struct input_absinfo absInfo;
@@ -337,15 +336,11 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
                     if (info.isCentered) {
                         // Create positive virtual axis
                         int positiveIndex = device.nextVirtualAxisIndex++;
-                        std::string positiveName = name + "+";
-                        device.axisName2Index[positiveName] = positiveIndex;
-                        device.axisIndex2Name[positiveIndex] = positiveName;
+                        device.axes.addEntry(name + "+", positiveIndex);
 
                         // Create negative virtual axis
                         int negativeIndex = device.nextVirtualAxisIndex++;
-                        std::string negativeName = name + "-";
-                        device.axisName2Index[negativeName] = negativeIndex;
-                        device.axisIndex2Name[negativeIndex] = negativeName;
+                        device.axes.addEntry(name + "-", negativeIndex);
 
                         // Store mapping
                         device.centeredAxisMapping[code] = std::make_pair(positiveIndex, negativeIndex);
@@ -375,8 +370,7 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
         for (int code = 0; code <= REL_MAX; code++) {
             if (testBit(code, relBits)) {
                 std::string name = eventCodeToString(EV_REL, code);
-                device.axisName2Index[name] = code;
-                device.axisIndex2Name[code] = name;
+                device.axes.addEntry(name, code);
 
                 // Relative axes don't have min/max, use reasonable defaults
                 AxisInfo info;
@@ -389,17 +383,11 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
                 device.axisInfo[code] = info;
 
                 // Relative axes are always centered, create virtual + and - axes
-                // Create positive virtual axis
                 int positiveIndex = device.nextVirtualAxisIndex++;
-                std::string positiveName = name + "+";
-                device.axisName2Index[positiveName] = positiveIndex;
-                device.axisIndex2Name[positiveIndex] = positiveName;
+                device.axes.addEntry(name + "+", positiveIndex);
 
-                // Create negative virtual axis
                 int negativeIndex = device.nextVirtualAxisIndex++;
-                std::string negativeName = name + "-";
-                device.axisName2Index[negativeName] = negativeIndex;
-                device.axisIndex2Name[negativeIndex] = negativeName;
+                device.axes.addEntry(name + "-", negativeIndex);
 
                 // Store mapping
                 device.centeredAxisMapping[code] = std::make_pair(positiveIndex, negativeIndex);
@@ -415,8 +403,7 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
         for (int code = 0; code <= KEY_MAX; code++) {
             if (testBit(code, keyBits)) {
                 std::string name = eventCodeToString(EV_KEY, code);
-                device.axisName2Index[name] = code;
-                device.axisIndex2Name[code] = name;
+                device.axes.addEntry(name, code);
 
                 // Buttons have simple 0/1 values
                 AxisInfo info;
