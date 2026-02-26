@@ -43,11 +43,8 @@ add_executable(InputProxy
     src/usb_descriptors.cpp
     ../shared/shared.cpp
     ../shared/corocgo.cpp
-   # src/UsbCdcManager.cpp
-   # src/devices/usbCdc.cpp
     src/devices/AbstractVirtualDevice.cpp
     src/devices/AbstractDeviceManager.cpp
-   # src/devices/KeyboardDevice.cpp
     src/devices/TinyUsbKeyboardDevice.cpp
     src/devices/TinyUsbMouseDevice.cpp
     src/devices/TinyUsbGamepadDevice.cpp
@@ -55,7 +52,6 @@ add_executable(InputProxy
     src/devices/XInputDevice.cpp
     src/devices/XinputDeviceManager.cpp
     src/devices/tud_driver_xinput.cpp
-    src/Timer.cpp
 )
 
 pico_set_program_name(InputProxy "InputProxy")

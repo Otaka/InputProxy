@@ -271,14 +271,14 @@ bool TinyUsbGamepadDevice::init() {
 
 void TinyUsbGamepadDevice::setAxis(int code, int value) {
     // Hat switch (codes 0-3)
-    if (code >= GAMEPAD_HAT_UP && code <= GAMEPAD_HAT_RIGHT) {
+    if (code >= GAMEPAD_AXIS_HAT_UP && code <= GAMEPAD_AXIS_HAT_RIGHT) {
         if (!hasHat) return;  // Hat not enabled
         bool pressed = (value > 0);
         switch (code) {
-            case GAMEPAD_HAT_UP:    hatUp = pressed; break;
-            case GAMEPAD_HAT_DOWN:  hatDown = pressed; break;
-            case GAMEPAD_HAT_LEFT:  hatLeft = pressed; break;
-            case GAMEPAD_HAT_RIGHT: hatRight = pressed; break;
+            case GAMEPAD_AXIS_HAT_UP:    hatUp = pressed; break;
+            case GAMEPAD_AXIS_HAT_DOWN:  hatDown = pressed; break;
+            case GAMEPAD_AXIS_HAT_LEFT:  hatLeft = pressed; break;
+            case GAMEPAD_AXIS_HAT_RIGHT: hatRight = pressed; break;
         }
         updateHatFromButtons();
         return;

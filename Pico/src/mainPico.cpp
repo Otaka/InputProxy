@@ -8,7 +8,6 @@
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
 #include "pico/time.h"
-#include "pico/mutex.h"
 #include "tusb.h"
 #include "../shared/corocgo.h"
 #include "UartManagerPico.h"
@@ -23,14 +22,13 @@
 #include "devices/TinyUsbMouseDevice.h"
 #include "devices/TinyUsbGamepadDevice.h"
 #include "devices/XInputDevice.h"
-#include "Timer.h"
 #include "hardware/watchdog.h"
 
 using namespace simplerpc;
 using namespace corocgo;
 
 static UartManagerPico* uartManager = nullptr;
-
+static char uartInputBuffer[5120];
 // RPC Manager for UART communication with Mainboard
 static RpcManager<>* uartRpcManager = nullptr;
 static Pico2Main pico2MainRpcClient;
@@ -84,14 +82,7 @@ std::string generateRandomDeviceId() {
     return result;
 }
 
-void handleUartMessage(const char* data, size_t length) {
-    // Forward raw UART data to UART RPC manager (input filter handles deframing)
-    if (data && length > 0 && uartRpcManager) {
-        uartRpcManager->processInput(data, length);
-    }
-}
-
-bool initUartRpcSystem() {
+void initUartRpcSystem() {
     // Initialize UART RPC Manager for Mainboard communication
     uartRpcManager = new RpcManager<>();
     uartRpcManager->addInputFilter(new StreamFramerInputFilter());
@@ -234,8 +225,6 @@ bool initUartRpcSystem() {
     uartRpcManager->registerServer(main2PicoRpcServer);
 
     pico2MainRpcClient = uartRpcManager->createClient<Pico2Main>();
-
-    return true;
 }
 
 void reboot(){
@@ -269,41 +258,39 @@ int _main() {
     }
 
     // Initialize device manager from saved mode (default HID)
-    {
-        std::string savedMode = persistentStorage.get("mode");
-        DeviceMode bootMode = (savedMode == "XINPUT") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
+    std::string savedMode = persistentStorage.get("mode");
+    DeviceMode bootMode = (savedMode == "XINPUT") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
+    if (bootMode == DeviceMode::XINPUT_MODE) {
+        XinputDeviceManager* xinputManager = new XinputDeviceManager();
+        xinputManager->vendorId(0x045E)
+                        ->productId(0x028E)
+                        ->manufacturer("Microsoft")
+                        ->productName("Xbox 360 Controller")
+                        ->serialNumber("000000");
+        deviceManager = xinputManager;
+    } else {
+        HidDeviceManager* hidManager = new HidDeviceManager();
+        hidManager->vendorId(0x1209)
+                    ->productId(0x0003)
+                    ->manufacturer("InputProxy")
+                    ->productName("InputProxy Composite Device")
+                    ->serialNumber("20260118");
+        deviceManager = hidManager;
+        hidManager->plugDevice(0, TinyUsbKeyboardBuilder().build(), "", DeviceType::KEYBOARD, 3);
+    }
+    setDeviceManager(deviceManager);
+    deviceManager->init();
 
-        if (bootMode == DeviceMode::XINPUT_MODE) {
-            XinputDeviceManager* xinputManager = new XinputDeviceManager();
-            xinputManager->vendorId(0x045E)
-                         ->productId(0x028E)
-                         ->manufacturer("Microsoft")
-                         ->productName("Xbox 360 Controller")
-                         ->serialNumber("000000");
-            deviceManager = xinputManager;
-        } else {
-            HidDeviceManager* hidManager = new HidDeviceManager();
-            hidManager->vendorId(0x1209)
-                     ->productId(0x0003)
-                     ->manufacturer("InputProxy")
-                     ->productName("InputProxy Composite Device")
-                     ->serialNumber("20260118");
-            deviceManager = hidManager;
+    uartManager = new UartManagerPico();
+
+    initUartRpcSystem();
+
+    coro([&deviceId](){
+        while (!pico2MainRpcClient.onBoot(deviceId)) {
+            sleep(300);
         }
-        setDeviceManager(deviceManager);
-        deviceManager->init();
-    }
-
-    uartManager = new UartManagerPico(UartPort::UART_0);
-    uartManager->onMessage(handleUartMessage);
-
-    if (!initUartRpcSystem())
-        return 1;
-
-    while (!pico2MainRpcClient.onBoot(deviceId)) {
-        sleep(300);
-    }
-
+    });
+    
     //log coroutine
     coro([]() {
         while (true) {
@@ -328,12 +315,31 @@ int _main() {
         }
     });
 
+    //uart read coroutine
+    coro([]() {
+        while (true) {
+            size_t len = uartManager->read(uartInputBuffer, sizeof(uartInputBuffer));
+            if (len > 0 && uartRpcManager) {
+                uartRpcManager->processInput(uartInputBuffer, len);
+            }
+        }
+    });
+
+    //send periodic message
+    coro([]() {
+        int index=0;
+        char buffer[256];
+        while (true) {
+            sleep(2000);
+            sprintf(buffer, "Hello world %d", index++);
+            logChannel->send(buffer);
+        }
+    });
+
     //every tick coroutine
     while (true) {
         // Update all devices through DeviceManager
-        if (deviceManager) {
-            deviceManager->update();
-        }
+        deviceManager->update();
 
         //process usb tasks
         tud_task();

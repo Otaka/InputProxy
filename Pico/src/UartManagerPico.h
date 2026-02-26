@@ -1,32 +1,21 @@
 #pragma once
-#include <functional>
 #include <cstdint>
-#include "pico/mutex.h"
+#include "../shared/corocgo.h"
 
-enum class UartPort {
-    UART_0,
-    UART_1
-};
+using namespace corocgo;
 
 class UartManagerPico {
 public:
-    using MessageCallback = std::function<void(const char* data, size_t length)>;
-
-    UartManagerPico(UartPort port);
+    UartManagerPico();
     ~UartManagerPico();
 
-    void onMessage(MessageCallback callback);
+    size_t read(char* buffer, size_t bufferSize);
     void sendData(const char* data, size_t length);
 
 private:
     static void on_uart_interrupt_0();
-    static void on_uart_interrupt_1();
-    
+
     void onInterrupt();
-    
-    UartPort port;
-    MessageCallback messageCallback;
-    char buffer[2048];
-    size_t bufferIndex;
-    mutex_t sendMutex;
+
+    Channel<bool>* channel;
 };

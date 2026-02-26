@@ -18,7 +18,7 @@
 
 // Gamepad axis codes and button codes are now defined in shared.h as HID_GAMEPAD_AXES enum
 // Use the enum values from shared.h:
-//   - GAMEPAD_HAT_UP, GAMEPAD_HAT_DOWN, GAMEPAD_HAT_LEFT, GAMEPAD_HAT_RIGHT (0-3)
+//   - GAMEPAD_AXIS_HAT_UP, GAMEPAD_AXIS_HAT_DOWN, GAMEPAD_AXIS_HAT_LEFT, GAMEPAD_AXIS_HAT_RIGHT (0-3)
 //   - GAMEPAD_BTN_1 through GAMEPAD_BTN_32 (4-35)
 //   - GAMEPAD_AXIS_LX_MINUS, GAMEPAD_AXIS_LX_PLUS, etc. (36-51)
 // Note: Axis values are 0-1000, mapped to 0-255 for HID (with 127 as center)
