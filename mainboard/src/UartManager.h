@@ -1,3 +1,5 @@
+#pragma once
+
 #include <fcntl.h>
 #include <iostream>
 #include <termios.h>
@@ -21,35 +23,40 @@ enum UART_CHANNEL {
 
 class UartManager {
   private:
+    UART_CHANNEL channel_;
     std::vector<std::string> devicePaths;
     std::string activeDevicePath;
     int uartFileHandle;
     char buffer[10*1024];
 
-  public:
-    UartManager(UART_CHANNEL channel = UART0) : uartFileHandle(-1) {
-        switch(channel) {
-            case UART0:
-                devicePaths = {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
-                break;
-            case UART1:
-                devicePaths = {"/dev/serial1", "/dev/ttyAMA1", "/dev/ttyS1"};
-                break;
-            case UART2:
-                devicePaths = {"/dev/serial2", "/dev/ttyAMA2", "/dev/ttyS2"};
-                break;
-            case UART3:
-                devicePaths = {"/dev/serial3", "/dev/ttyAMA3", "/dev/ttyS3"};
-                break;
-            case UART4:
-                devicePaths = {"/dev/serial4", "/dev/ttyAMA4", "/dev/ttyS4"};
-                break;
-            case UART5:
-                devicePaths = {"/dev/serial5", "/dev/ttyAMA5", "/dev/ttyS5"};
-                break;
-            default:
-                throw std::invalid_argument("Unknown UART channel passed in constructor");
+    static std::vector<std::string> getPathsForChannel(UART_CHANNEL ch) {
+        switch(ch) {
+            case UART0: return {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
+            case UART1: return {"/dev/serial1", "/dev/ttyAMA1", "/dev/ttyS1"};
+            case UART2: return {"/dev/serial2", "/dev/ttyAMA2", "/dev/ttyS2"};
+            case UART3: return {"/dev/serial3", "/dev/ttyAMA3", "/dev/ttyS3"};
+            case UART4: return {"/dev/serial4", "/dev/ttyAMA4", "/dev/ttyS4"};
+            case UART5: return {"/dev/serial5", "/dev/ttyAMA5", "/dev/ttyS5"};
+            default: throw std::invalid_argument("Unknown UART channel");
         }
+    }
+
+  public:
+    UartManager(UART_CHANNEL channel = UART0) : channel_(channel), uartFileHandle(-1) {
+        devicePaths = getPathsForChannel(channel);
+    }
+
+    UART_CHANNEL getChannel() const { return channel_; }
+
+    static bool testUartChannel(UART_CHANNEL ch) {
+        for (const auto& path : getPathsForChannel(ch)) {
+            int fd = open(path.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+            if (fd >= 0) {
+                close(fd);
+                return true;
+            }
+        }
+        return false;
     }
 
     int getUartFd() const {

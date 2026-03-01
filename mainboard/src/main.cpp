@@ -2,175 +2,223 @@
 #include <iomanip>
 #include <fcntl.h>
 #include <unistd.h>
-#include <thread>
-#include <atomic>
-#include "httplib.h"
+#include "CoHttpServer.h"
+#include "RestApi.h"
 
 #define RPCMANAGER_STD_STRING
 #include "simplerpc/simplerpc.h"
 #include "rpcinterface.h"
-#include "EventLoop.h"
 #include "UartManager.h"
-#include "webtester.h"
 #include "RealDeviceManager.h"
+#include "EmulationBoard.h"
 
 using namespace simplerpc;
+using namespace corocgo;
 
-// Global instances
-EventLoop eventLoop;
-UartManager*uartManager;
+// Per-UART link: bundles UartManager + RPC stack for one Pico connection
+struct UartRpcLink {
+    UART_CHANNEL channel;
+    UartManager* uartManager;
+    RpcManager<>* rpcManager;
+    Pico2Main pico2MainServer;
+    Main2Pico main2PicoClient;
+};
 
-// RPC managers for bidirectional communication
-static RpcManager<>* rpcManager = nullptr;
+static std::vector<UartRpcLink> uartLinks;
 
-// Server implementation for methods Pico can call (ping, debugPrint)
-static Pico2Main pico2MainRpcServer;
+// Emulation boards (Pico devices connected via UART)
+static std::vector<EmulationBoard> emulationBoards;
+static int nextEmulationBoardId = 1;
 
-// Client to call Pico's methods (ping, setLed, getLedStatus)
-static Main2Pico main2PicoRpcClient;
+// Channel for axis events from real devices
+static Channel<AxisEvent>* axisEventChannel;
 
-// Initialize RPC system
+// ---------------------------------------------------------------------------
+// UART detection and RPC system setup
+// ---------------------------------------------------------------------------
+
+void detectUarts() {
+    UART_CHANNEL channels[] = { UART0, UART1, UART2, UART3, UART4, UART5 };
+    for (auto ch : channels) {
+        if (!UartManager::testUartChannel(ch)) continue;
+
+        auto* uart = new UartManager(ch);
+        if (!uart->configureUart()) {
+            std::cerr << "UART" << ch << ": detected but failed to configure" << std::endl;
+            delete uart;
+            continue;
+        }
+        uart->flushInput();
+
+        UartRpcLink link;
+        link.channel = ch;
+        link.uartManager = uart;
+        link.rpcManager = nullptr;
+        uartLinks.push_back(std::move(link));
+        std::cout << "UART" << ch << ": detected at " << uart->getActiveDevicePath() << std::endl;
+    }
+    std::cout << "Detected " << uartLinks.size() << " UART channel(s)" << std::endl;
+}
+
 bool initRpcSystem() {
     std::cout << "Initializing RPC system..." << std::endl;
-    
-    // Check UART device
-    if (!uartManager->testHasUartDevice()) {
-        std::cerr << "No UART device found at /dev/serial0" << std::endl;
+
+    detectUarts();
+    if (uartLinks.empty()) {
+        std::cerr << "No UART devices found" << std::endl;
         return false;
     }
 
-    if (!uartManager->configureUart()) {
-        std::cerr << "Failed to configure UART interface to Raspberry PICO" << std::endl;
-        return false;
-    }
-    uartManager->flushInput();
-    
-    // Create RPC manager
-    rpcManager = new RpcManager<>();
+    for (auto& link : uartLinks) {
+        auto* rpc = new RpcManager<>();
+        rpc->addInputFilter(new StreamFramerInputFilter());
+        rpc->addOutputFilter(new StreamFramerOutputFilter());
+        rpc->setDefaultTimeout(2000);
 
-    // Add filters to RPC manager (handles packet assembly/disassembly)
-    rpcManager->addInputFilter(new StreamFramerInputFilter());
-    rpcManager->addOutputFilter( new StreamFramerOutputFilter());
+        UartManager* uart = link.uartManager;
+        rpc->setOnSendCallback([uart](const char* data, int len) {
+            if (data && len > 0) uart->uartSend(data, len);
+        });
 
-    // Set global timeout for all RPC calls (2 seconds)
-    rpcManager->setDefaultTimeout(2000);
+        UART_CHANNEL ch = link.channel;
+        rpc->onError([ch](int code, const char* msg) {
+            std::cerr << "[RPC ERROR UART" << ch << " code=" << code << "] "
+                      << (msg ? msg : "") << std::endl;
+        });
 
-    // Setup transport layer: send framed data via UART
-    rpcManager->setOnSendCallback([](const char* data, int len) {
-        if (data && len > 0) {
-            uartManager->uartSend(data, len);
-        }
-    });
+        // Server: methods Pico can call on this UART
+        link.pico2MainServer.ping = [ch](int val) -> int {
+            std::cout << "[UART" << ch << "] ping(" << val << ") from Pico" << std::endl;
+            return val;
+        };
+        link.pico2MainServer.debugPrint = [ch](std::string value) {
+            std::cout << "[UART" << ch << " LOG] " << value << std::endl;
+        };
+        link.pico2MainServer.onBoot = [&link](std::string serialString) -> bool {
+            std::cout << "[UART" << link.channel << "] Pico booted with Serial: "
+                      << serialString << std::endl;
 
-    // Setup error callback
-    rpcManager->onError([](int code, const char* msg) {
-        std::cerr << "[MAIN RPC ERROR " << code << "] " << (msg ? msg : "") << std::endl;
-    });
-
-    // Setup receive path: UART -> RPC
-    eventLoop.addFileDescriptor(uartManager->getUartFd(), 
-        [](int fd) {
-            char buffer[2048];
-            ssize_t bytesRead = uartManager->uartRead(buffer, sizeof(buffer));
-            // Forward raw UART data to RPC manager (input filter handles deframing)
-            if (bytesRead > 0 && rpcManager) {
-                rpcManager->processInput(buffer, bytesRead);
+            // Check if we already have this board by serialString
+            for (auto& board : emulationBoards) {
+                if (board.serialString == serialString) {
+                    board.active = true;
+                    board.main2PicoRpcClient = link.main2PicoClient;
+                    board.uartChannel = link.channel;
+                    std::cout << "[UART" << link.channel
+                              << "] Reactivated EmulationBoard id=" << board.id << std::endl;
+                    return true;
+                }
             }
-        },
-        [](int fd) {
-            std::cerr << "UART device disconnected!" << std::endl;
-        }
-    );
-    
-    // ---------------------------------------------
-    // Register SERVER: methods that Pico can call
-    // ---------------------------------------------
-    pico2MainRpcServer.ping = [](int val) -> int {
-        std::cout << "[MAIN SERVER] ping("<< val <<") called from Pico" << std::endl;
-        return val;
-    };
-    
-    pico2MainRpcServer.debugPrint = [](std::string value) {
-        std::cout << "[PICO LOG]" << value << std::endl;
-    };
 
-    pico2MainRpcServer.onBoot = [](std::string deviceId) -> bool {
-        std::cout << "[MAIN SERVER] Pico booted with Device ID: " << deviceId << std::endl;
-        return true;
-    };
+            // New board — register it
+            EmulationBoard board;
+            board.id = nextEmulationBoardId++;
+            board.serialString = serialString;
+            board.main2PicoRpcClient = link.main2PicoClient;
+            board.uartChannel = link.channel;
+            board.active = true;
+            emulationBoards.push_back(std::move(board));
+            std::cout << "[UART" << link.channel << "] Registered new EmulationBoard id="
+                      << (nextEmulationBoardId - 1) << " serial=" << serialString << std::endl;
+            return true;
+        };
 
-    rpcManager->registerServer(pico2MainRpcServer);
-    std::cout << "Pico2Main server registered" << std::endl;
-    
-    // ---------------------------------------------
-    // Create CLIENT: to call Pico's methods
-    // ---------------------------------------------
-    main2PicoRpcClient = rpcManager->createClient<Main2Pico>();
-    std::cout << "Main2Pico client created" << std::endl;
-    
-    std::cout << "RPC system initialized successfully!" << std::endl;
+        rpc->registerServer(link.pico2MainServer);
+        link.main2PicoClient = rpc->createClient<Main2Pico>();
+        link.rpcManager = rpc;
+
+        // Tell the Pico to reboot so it announces itself via onBoot
+        std::cout << "UART" << ch << ": sending reboot to Pico..." << std::endl;
+        link.main2PicoClient.reboot();
+    }
+
+    std::cout << "RPC system initialized on " << uartLinks.size() << " channel(s)" << std::endl;
     return true;
 }
 
-void runEventLoop() {
-    std::cout << "Starting event loop..." << std::endl;
-    // Run the event loop (blocks)
-    eventLoop.runLoop();
-}
+// ---------------------------------------------------------------------------
 
-int main() {
-    uartManager=new UartManager(UART2);
-    if(!uartManager->testHasUartDevice()){
-        std::cout << "Cannot open uart" << std::endl;    
-        return 1;
-    }
+void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
 
     if (!initRpcSystem()) {
         std::cerr << "Failed to initialize RPC system" << std::endl;
-        return 1;
+        return;
     }
 
-    // Initialize Real Device Manager
-    std::vector<std::string> duplicateSerialIds = {
-        // Add any problematic device IDs here, e.g.:
-        // "0x045e:0x028e:0000" // Example: Xbox 360 controller with duplicate serial
-    };
+    std::vector<std::string> duplicateSerialIds = {};
+    RealDeviceManager deviceManager(duplicateSerialIds);
 
-    RealDeviceManager deviceManager(
-        eventLoop,
-        duplicateSerialIds,
-        // onDeviceConnect callback
-        [](RealDevice* device) {
-            // std::cout << "[MAIN] Device connected: " << device->deviceId
-            //           << " (" << device->deviceName << ")" << std::endl;
-            // std::cout << "       Vendor: 0x" << std::hex << device->vendorId
-            //           << ", Product: 0x" << device->productId << std::dec << std::endl;
-            // std::cout << "       Capabilities: " << device->axisName2Index.size() << " inputs" << std::endl;
-        },
-        // onDeviceDisconnect callback
-        [](RealDevice* device) {
-            std::cout << "[MAIN] Device disconnected: " << device->deviceId << std::endl;
-        },
-        // onInput callback
-        [&deviceManager](const std::string& deviceId, int axisIndex, int value) {
-            RealDevice*device=&(deviceManager.deviceId2Device[deviceId]);
-            std::string name=device->axisIndex2Name[axisIndex];
-            // TODO: Map and send to virtual device via UART
-            std::cout << "[MAIN] Input from " << deviceId
-                      << " - axis: " << axisIndex <<" name: "<<name << " value: "<<std::setw(4) << value << std::endl;
+    axisEventChannel = makeChannel<AxisEvent>(64);
+
+    // 1. UART → RPC coroutines (one per detected channel)
+    for (auto& link : uartLinks) {
+        coro([&link]() {
+            int fd = link.uartManager->getUartFd();
+            char buffer[2048];
+            while (true) {
+                auto [flags, err] = wait_file(fd, WAIT_IN);
+                if (err) break;
+                ssize_t n = link.uartManager->uartRead(buffer, sizeof(buffer));
+                if (n > 0)
+                    link.rpcManager->processInput(buffer, n);
+            }
+        });
+    }
+
+    // 2. Device discovery coroutine — loops every 5 seconds
+    coro([&]() {
+        while (true) {
+            auto paths = deviceManager.scanDevices();
+            for (auto& path : paths) {
+                RealDevice* dev = deviceManager.registerDevice(path);
+                if (!dev) continue;
+                // Spawn one reading coroutine per device
+                coro([dev, &deviceManager]() {
+                    std::cout << "[CONNECT] device=" << dev->deviceIdStr<<std::endl;
+                    while (true) {
+                        auto [flags, err] = wait_file(dev->fd, WAIT_IN);
+                        if (err || !(flags & WAIT_IN)) {
+                            dev->active = false;
+                            std::cout << "[DISCONNECT] device=" << dev->deviceIdStr<<std::endl;
+                            break;
+                        }
+                        if (!deviceManager.processDeviceInput(dev, axisEventChannel)) break;
+                    }
+                });
+            }
+            sleep(5000);
         }
-    );
+    });
 
-    // Start web tester interface
-    initWebserver(main2PicoRpcClient);
+    // 3. Axis event processor coroutine
+    coro([]() {
+        while (true) {
+            auto [event, err] = axisEventChannel->receive();
+            if (err) break;
+            // TODO: mapping
+            // TODO: pass to virtual device manager
+            std::cout << "[INPUT] device="<< std::setw(2) << event.deviceId
+                      << " axis=" << std::setw(5) << event.axisIndex
+                      << " value=" << std::setw(4) << event.value << std::endl;
+        }
+    });
 
-    runEventLoop();
-    
+    // 4. HTTP API server
+    startRestApi(8080, deviceManager);
+}
+
+int main() {
+    coro(_main);
+    scheduler_start();
+
     // Cleanup
-    rpcManager->deregisterServer<Pico2Main>();
-    delete rpcManager;
-    
+    for (auto& link : uartLinks) {
+        link.rpcManager->deregisterServer<Pico2Main>();
+        delete link.rpcManager;
+        delete link.uartManager;
+    }
+
     std::cout << "Exit" << std::endl;
     return 0;
 }

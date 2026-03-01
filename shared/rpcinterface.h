@@ -44,7 +44,7 @@ struct Pico2Main {
     // Synchronous methods
     std::function<int(int)> ping;
     std::function<void(std::string)> debugPrint;
-    std::function<bool(std::string)> onBoot;  // Called by Pico on boot with deviceId
+    std::function<bool(std::string)> onBoot;  // Called by Pico on boot with serialString
 
     // User-defined pointer for application context
     void* userPointer = nullptr;
@@ -68,7 +68,7 @@ struct Main2Pico {
     std::function<int(int)> ping;
     std::function<void(bool)> setLed;
     std::function<bool()> getLedStatus;
-    std::function<bool()> rebootFlashMode;
+    std::function<void()> rebootFlashMode;
     std::function<void()> reboot;  // Reboot the Pico
     std::function<void(int,int,int)> setAxis;  // device, axis, value
     std::function<void(uint8_t)> setMode;  // Set device mode (0=HID, 1=XInput), saves to flash and reboots
