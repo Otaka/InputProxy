@@ -118,7 +118,7 @@ public:
 
 private:
     // Check if a device key should use USB path fallback
-    bool shouldUseFallbackId(const std::string& baseId) const;
+    bool shouldUseFallbackId(const std::string baseId) const;
 
     // Open and configure an evdev device (reads capabilities, sets fd)
     bool openDevice(RealDevice& device);

@@ -2,14 +2,16 @@
 
 #include <string.h>
 #include <cstdlib>
+#include <cstdarg>
 #include <ctime>
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 #include "pico/bootrom.h"
 #include "pico/time.h"
+#include "pico/stdio.h"
 #include "tusb.h"
-#include "../shared/corocgo.h"
+#include "../shared/corocgo/corocgo.h"
 #include "UartManagerPico.h"
 #include "../shared/simplerpc/simplerpc.h"
 #include "../shared/rpcinterface.h"
@@ -23,6 +25,7 @@
 #include "devices/TinyUsbGamepadDevice.h"
 #include "devices/XInputDevice.h"
 #include "hardware/watchdog.h"
+#include "hardware/uart.h"
 
 using namespace simplerpc;
 using namespace corocgo;
@@ -68,6 +71,25 @@ void rebootToBootsel() {
     sleep_ms(100);
     reset_usb_boot(0, 0);
 }
+
+void initDebugPrintUart1(){
+    stdio_init_all();
+    uart_init(uart1, 115200);
+    gpio_set_function(4, GPIO_FUNC_UART);  // TX
+    gpio_set_function(5, GPIO_FUNC_UART);  // RX
+}
+
+void printfUart1(const char* format, ...) {
+    char buf[256];
+    va_list args;
+    va_start(args, format);
+    int len = vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    if (len > 0) {
+        uart_write_blocking(uart1, (const uint8_t*)buf, len);
+    }
+}
+
 
 std::string generateRandomDeviceId() {
     const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -227,7 +249,7 @@ void initUartRpcSystem() {
     pico2MainRpcClient = uartRpcManager->createClient<Pico2Main>();
 }
 
-void reboot(){
+void reboot() {
     sleep_ms(100);  // Brief delay to ensure all communication completes
     watchdog_enable(1, false);
     while(true) { tight_loop_contents(); }
@@ -239,12 +261,9 @@ int _main() {
     logChannel = makeChannel<std::string>(10);
 
     initPicoLed();
+    initDebugPrintUart1();
     // Initialize TinyUSB
     tusb_init();
-
-    enableDefaultLed(true);
-    sleep_ms(100);
-    enableDefaultLed(false);
 
     // Load persistent storage
     persistentStorage.load();
@@ -285,15 +304,31 @@ int _main() {
 
     initUartRpcSystem();
 
-    coro([&deviceId](){
-        while (!pico2MainRpcClient.onBoot(deviceId)) {
-            sleep(300);
-        }
-    });
-    
-    //log coroutine
+    enableDefaultLed(true);
+    sleep_ms(100);
+    enableDefaultLed(false);
+    for(int i=0;i<5;i++){
+        printfUart1("Test uart output=%d\n\r", i);
+        sleep_ms(1000);
+    }
+
+    //uart read coroutine
     coro([]() {
         while (true) {
+            size_t len = uartManager->read(uartInputBuffer, sizeof(uartInputBuffer));
+            if (len > 0 && uartRpcManager) {
+                uartRpcManager->processInput(uartInputBuffer, len);
+            }
+        }
+    });
+
+    while (!pico2MainRpcClient.onBoot(deviceId, bootMode)) {
+        sleep(300);
+    }
+    
+    // //log coroutine
+    coro([]() {
+         while (true) {
             auto [logLine, error] = logChannel->receive();
             if (error)
                 break;
@@ -315,22 +350,15 @@ int _main() {
         }
     });
 
-    //uart read coroutine
-    coro([]() {
-        while (true) {
-            size_t len = uartManager->read(uartInputBuffer, sizeof(uartInputBuffer));
-            if (len > 0 && uartRpcManager) {
-                uartRpcManager->processInput(uartInputBuffer, len);
-            }
-        }
-    });
+    
 
     //send periodic message
     coro([]() {
         int index=0;
         char buffer[256];
         while (true) {
-            sleep(2000);
+            sleep(1000);
+            toggleDefaultLed();
             sprintf(buffer, "Hello world %d", index++);
             logChannel->send(buffer);
         }
@@ -343,10 +371,21 @@ int _main() {
 
         //process usb tasks
         tud_task();
+        sleep(1);
+    }
+    return 0;
+}
 
-        coro_yield();
+
+int testUart(){
+    initPicoLed();
+    int counter = 0;
+    while(true){
+        toggleDefaultLed();
+       
     }
 }
+
 
 int main() {
     coro(_main);

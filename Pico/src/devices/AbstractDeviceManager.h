@@ -3,15 +3,10 @@
 
 #include <string>
 #include <cstdint>
+#include "../shared/shared.h"
 
 // Forward declaration
 class AbstractVirtualDevice;
-
-// Device mode enumeration
-enum class DeviceMode : uint8_t {
-    HID_MODE = 0,      // Keyboard + Mouse + HID Gamepads (DEFAULT)
-    XINPUT_MODE = 1    // XInput Gamepads only (Xbox 360)
-};
 
 /**
  * Abstract base class for device managers.

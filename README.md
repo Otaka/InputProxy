@@ -47,19 +47,48 @@ With dual Pico setup(one Pico works on "HID Mode" and second in "XINPUT Mode"), 
 Work in progress - implementation details are being actively developed.
 
 
-## Installation
-Add these lines to /boot/firmware/config.txt (in the main section, NOT under [all]):
+## Installation (Raspberry Pi 4)
 
+### 1. Enable UARTs in /boot/firmware/config.txt
+
+Add these lines in the main section (NOT under [cm4], [cm5], or [all]):
+```
 enable_uart=1
-dtoverlay=uart2
+dtoverlay=uart3
+dtoverlay=uart4
+```
+
+### 2. Disable serial console
+
+By default Raspbian uses UART0 as a login console. This must be disabled:
+```bash
+sudo systemctl stop serial-getty@ttyS0.service
+sudo systemctl disable serial-getty@ttyS0.service
+```
+
+Remove `console=serial0,115200` from `/boot/firmware/cmdline.txt`:
+```bash
+sudo sed -i 's/console=serial0,[0-9]* //g' /boot/firmware/cmdline.txt
+```
+
+### 3. Reboot
+
+After reboot, the following devices should be available:
+- `/dev/ttyAMA3` (UART0, GPIO 14/15) — also accessible as `/dev/serial0`
+- `/dev/ttyAMA4` (UART2, GPIO 0/1)
 
 ## Connect PICO to Rasbperry pi 4
-Pico 1:
-Orange- 6 (Ground)
-Red   - 8 (GPIO 14 TXD)
-Brown - 10(GPIO 15 RXD)
+Pico wires:
+Pin 1: Brown - TXD
+Pin 2: Red - RXD
+Pin 3: Orange - Ground
 
-Pico 2
-Orange- 30(Ground)
-Red   - 28(GPIO 1)
-Brown - 27(GPIO 0)
+Pico 1 → UART3
+Pico Red (RXD)   -> Pi GPIO4 (Pin 7)
+Pico Brown (TXD) -> Pi GPIO5 (Pin 29)
+Pico Orange(GND) -> Pi any Ground(I.E. Pin 6) 
+
+Pico 2 → UART4
+Pico Red (RXD)   -> Pi GPIO8 (Pin 24)
+Pico Brown (TXD) -> Pi GPIO9 (Pin 21)
+Pico Orange(GND) -> Pi any Ground(I.E. Pin 9) 

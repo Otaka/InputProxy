@@ -160,9 +160,13 @@ std::string RealDeviceManager::generateDeviceKey(uint16_t vendor, uint16_t produ
     return baseId;
 }
 
-bool RealDeviceManager::shouldUseFallbackId(const std::string& baseId) const {
-    return std::find(duplicateSerialIds.begin(), duplicateSerialIds.end(), baseId)
-           != duplicateSerialIds.end();
+bool RealDeviceManager::shouldUseFallbackId(const std::string baseId) const {
+    for(int i=0;i< duplicateSerialIds.size();i++){
+        if (duplicateSerialIds[i]==baseId)
+            return true;
+    }
+
+    return false;
 }
 
 // ---------------------------------------------------------------------------

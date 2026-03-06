@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "../shared/corocgo.h"
+#include "../shared/corocgo/corocgo.h"
 
 using namespace corocgo;
 

@@ -31,12 +31,12 @@ class UartManager {
 
     static std::vector<std::string> getPathsForChannel(UART_CHANNEL ch) {
         switch(ch) {
-            case UART0: return {"/dev/serial0", "/dev/ttyAMA0", "/dev/ttyS0"};
-            case UART1: return {"/dev/serial1", "/dev/ttyAMA1", "/dev/ttyS1"};
-            case UART2: return {"/dev/serial2", "/dev/ttyAMA2", "/dev/ttyS2"};
-            case UART3: return {"/dev/serial3", "/dev/ttyAMA3", "/dev/ttyS3"};
-            case UART4: return {"/dev/serial4", "/dev/ttyAMA4", "/dev/ttyS4"};
-            case UART5: return {"/dev/serial5", "/dev/ttyAMA5", "/dev/ttyS5"};
+            case UART0: return {"/dev/ttyAMA0"};
+            case UART1: return {"/dev/ttyAMA1"};
+            case UART2: return {"/dev/ttyAMA2"};
+            case UART3: return {"/dev/ttyAMA3"};
+            case UART4: return {"/dev/ttyAMA4"};
+            case UART5: return {"/dev/ttyAMA5"};
             default: throw std::invalid_argument("Unknown UART channel");
         }
     }

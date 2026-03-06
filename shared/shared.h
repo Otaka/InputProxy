@@ -1,6 +1,11 @@
 #ifndef SHARED_UTILS_H
 #define SHARED_UTILS_H
 
+#include <string>
+#include <vector>
+#include <map>
+
+
 enum XBOX360_AXES {
     XBOX_BTN_DPAD_UP = 0,
     XBOX_BTN_DPAD_DOWN = 1,
@@ -388,10 +393,11 @@ extern const char* XBOX360_AXES_NAMES[26];
 extern const char* MOUSE_AXES_NAMES[15];
 extern const char* KEYBOARD_AXES_NAMES[258];
 
-#ifdef __cplusplus
-#include <string>
-#include <vector>
-#include <map>
+
+enum DeviceMode {
+    HID_MODE = 0,      // Keyboard + Mouse + HID Gamepads (DEFAULT)
+    XINPUT_MODE = 1    // XInput Gamepads only (Xbox 360)
+};
 
 // A single axis entry: human-readable name and its integer index (from the enums above)
 struct AxisEntry {
@@ -428,6 +434,5 @@ private:
     std::map<std::string, int> nameToIndex;
     std::map<int, std::string> indexToName;
 };
-#endif // __cplusplus
 
 #endif // SHARED_UTILS_H

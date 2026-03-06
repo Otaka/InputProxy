@@ -29,7 +29,7 @@ static void sendJson(coSession& session, int status, const std::string& json) {
     session->close();
 }
 
-static void handleRequest(coSession session, RealDeviceManager& deviceManager) {
+static void handleRequest(coSession session, RealDeviceManager* deviceManager) {
     const std::string& path = session->path;
 
     // GET /realdevices/list
@@ -37,7 +37,7 @@ static void handleRequest(coSession session, RealDeviceManager& deviceManager) {
         std::ostringstream json;
         json << "[";
         bool first = true;
-        for (auto& [id, dev] : deviceManager.getDevices()) {
+        for (auto& [id, dev] : deviceManager->getDevices()) {
             if (!first) json << ",";
             first = false;
             json << "{"
@@ -66,7 +66,7 @@ static void handleRequest(coSession session, RealDeviceManager& deviceManager) {
             return;
         }
 
-        RealDevice* dev = deviceManager.getDevice(deviceId);
+        RealDevice* dev = deviceManager->getDevice(deviceId);
         if (!dev) {
             sendJson(session, 404, "{\"error\":\"device not found\"}");
             return;
@@ -99,7 +99,7 @@ static void handleRequest(coSession session, RealDeviceManager& deviceManager) {
     sendJson(session, 404, "{\"error\":\"not found\"}");
 }
 
-void startRestApi(int port, RealDeviceManager& deviceManager) {
+void startRestApi(int port, RealDeviceManager* deviceManager) {
     coro([port, &deviceManager]() {
         coServer server = createServer(port);
         std::cout << "[HTTP] Listening on port " << port << std::endl;

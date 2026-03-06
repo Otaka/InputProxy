@@ -16,18 +16,18 @@ UartManagerPico::UartManagerPico() {
     instance = this;
 
     uart_init(uart0, 115200);
-        gpio_set_function(0, GPIO_FUNC_UART);  // TX
-        gpio_set_function(1, GPIO_FUNC_UART);  // RX
+    gpio_set_function(0, GPIO_FUNC_UART);  // TX
+    gpio_set_function(1, GPIO_FUNC_UART);  // RX
 
-        irq_set_exclusive_handler(UART0_IRQ, on_uart_interrupt_0);
-        irq_set_enabled(UART0_IRQ, true);
+    irq_set_exclusive_handler(UART0_IRQ, on_uart_interrupt_0);
+    irq_set_enabled(UART0_IRQ, true);
     uart_set_irq_enables(uart0, true, false);
 }
 
 UartManagerPico::~UartManagerPico() {
     instance = nullptr;
     uart_set_irq_enables(uart0, false, false);
-        irq_set_enabled(UART0_IRQ, false);
+    irq_set_enabled(UART0_IRQ, false);
     delete channel;
 }
 
@@ -39,8 +39,9 @@ void UartManagerPico::sendData(const char* data, size_t length) {
 }
 
 void UartManagerPico::onInterrupt() {
+    irq_set_enabled(UART0_IRQ, false);
     channel->sendExternalNoBlock(true);
-    }
+}
     
 size_t UartManagerPico::read(char* buffer, size_t bufferSize) {
     auto [signal, error] = channel->receive();
@@ -49,5 +50,6 @@ size_t UartManagerPico::read(char* buffer, size_t bufferSize) {
     while (uart_is_readable(uart0) && index < bufferSize) {
         buffer[index++] = uart_getc(uart0);
     }
+    irq_set_enabled(UART0_IRQ, true);
     return index;
 }

@@ -42,7 +42,7 @@ add_executable(InputProxy
     src/PersistentStorage.cpp
     src/usb_descriptors.cpp
     ../shared/shared.cpp
-    ../shared/corocgo.cpp
+    ../shared/corocgo/corocgo.cpp
     src/devices/AbstractVirtualDevice.cpp
     src/devices/AbstractDeviceManager.cpp
     src/devices/TinyUsbKeyboardDevice.cpp

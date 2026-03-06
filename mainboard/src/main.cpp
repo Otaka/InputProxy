@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "CoHttpServer.h"
 #include "RestApi.h"
-
+#include "../shared/shared.h"
 #define RPCMANAGER_STD_STRING
 #include "simplerpc/simplerpc.h"
 #include "rpcinterface.h"
@@ -24,14 +24,15 @@ struct UartRpcLink {
     Main2Pico main2PicoClient;
 };
 
-static std::vector<UartRpcLink> uartLinks;
+std::vector<UartRpcLink> uartLinks;
 
 // Emulation boards (Pico devices connected via UART)
-static std::vector<EmulationBoard> emulationBoards;
-static int nextEmulationBoardId = 1;
+std::vector<EmulationBoard> emulationBoards;
+int nextEmulationBoardId = 1;
 
 // Channel for axis events from real devices
-static Channel<AxisEvent>* axisEventChannel;
+Channel<AxisEvent>* axisEventChannel;
+RealDeviceManager*deviceManager;
 
 // ---------------------------------------------------------------------------
 // UART detection and RPC system setup
@@ -94,9 +95,11 @@ bool initRpcSystem() {
         link.pico2MainServer.debugPrint = [ch](std::string value) {
             std::cout << "[UART" << ch << " LOG] " << value << std::endl;
         };
-        link.pico2MainServer.onBoot = [&link](std::string serialString) -> bool {
+        link.pico2MainServer.onBoot = [&link](std::string serialString, int deviceModeInt) -> bool {
+            std::string deviceModeString=deviceModeInt==HID_MODE?"HID_MODE":"XINPUT_MODE";
+
             std::cout << "[UART" << link.channel << "] Pico booted with Serial: "
-                      << serialString << std::endl;
+                      << serialString << " in mode "<<deviceModeString<< std::endl;
 
             // Check if we already have this board by serialString
             for (auto& board : emulationBoards) {
@@ -147,7 +150,7 @@ void _main() {
     }
 
     std::vector<std::string> duplicateSerialIds = {};
-    RealDeviceManager deviceManager(duplicateSerialIds);
+    deviceManager=new RealDeviceManager(duplicateSerialIds);
 
     axisEventChannel = makeChannel<AxisEvent>(64);
 
@@ -167,14 +170,14 @@ void _main() {
     }
 
     // 2. Device discovery coroutine — loops every 5 seconds
-    coro([&]() {
+    coro([]() {
         while (true) {
-            auto paths = deviceManager.scanDevices();
+            auto paths = deviceManager->scanDevices();
             for (auto& path : paths) {
-                RealDevice* dev = deviceManager.registerDevice(path);
+                RealDevice* dev = deviceManager->registerDevice(path);
                 if (!dev) continue;
                 // Spawn one reading coroutine per device
-                coro([dev, &deviceManager]() {
+                coro([dev]() {
                     std::cout << "[CONNECT] device=" << dev->deviceIdStr<<std::endl;
                     while (true) {
                         auto [flags, err] = wait_file(dev->fd, WAIT_IN);
@@ -183,7 +186,7 @@ void _main() {
                             std::cout << "[DISCONNECT] device=" << dev->deviceIdStr<<std::endl;
                             break;
                         }
-                        if (!deviceManager.processDeviceInput(dev, axisEventChannel)) break;
+                        if (!deviceManager->processDeviceInput(dev, axisEventChannel)) break;
                     }
                 });
             }

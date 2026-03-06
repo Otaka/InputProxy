@@ -44,7 +44,7 @@ struct Pico2Main {
     // Synchronous methods
     std::function<int(int)> ping;
     std::function<void(std::string)> debugPrint;
-    std::function<bool(std::string)> onBoot;  // Called by Pico on boot with serialString
+    std::function<bool(std::string, int deviceMode)> onBoot;  // Called by Pico on boot with serialString
 
     // User-defined pointer for application context
     void* userPointer = nullptr;

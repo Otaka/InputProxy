@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include "../shared/shared.h"
 #include "AbstractDeviceManager.h"
 #include "AbstractVirtualDevice.h"
 #include "TinyUsbKeyboardDevice.h"
