@@ -1,126 +1,45 @@
 // rpcinterface.h - Shared RPC interface between Mainboard (RPi4) and Pico
-// This file defines the bidirectional RPC communication interface
+// Used with corocrpc: rpc.call(METHOD_ID, arg) / rpc.registerMethod(METHOD_ID, handler).
+// Argument layout documented per method as: args: <type> <name>, ... | returns: <type>
 #pragma once
-
-#include <functional>
-#include <tuple>
-#include <string>
 #include <cstdint>
 
-// Device configuration structures
-struct KbdConfig {
-    // Empty for now
-};
-
-struct MouseConfig {
-    // Empty for now
-};
+// ── Device configuration structures ──────────────────────────────────────
 
 struct HidGamepadConfig {
-    uint8_t hat;
+    uint8_t  hat;
     uint16_t axesMask;
-    uint8_t buttons;
-};
-
-struct Xbox360GamepadConfig {
-    // Empty for now
+    uint8_t  buttons;
 };
 
 struct DeviceConfiguration {
-    int deviceType;
+    int deviceType;  // 0=Keyboard, 1=Mouse, 2=HID Gamepad, 3=Xbox360 Gamepad
     union {
-        KbdConfig kbdConfig;
-        MouseConfig mouseConfig;
-        HidGamepadConfig hidGamepadConfig;
-        Xbox360GamepadConfig xbox360GamepadConfig;
+        HidGamepadConfig hidGamepadConfig;  // valid when deviceType == 2
     } config;
 };
 
-// ---------------------------------------------
-// Pico2Main Provider
-// RPC methods that Pico implements, Main has client to it and just calls
-// ---------------------------------------------
-struct Pico2Main {
-    // Synchronous methods
-    std::function<int(int)> ping;
-    std::function<void(std::string)> debugPrint;
-    std::function<bool(std::string, int deviceMode)> onBoot;  // Called by Pico on boot with serialString
+// ── Pico2Main method IDs ─────────────────────────────────────────────────
+// Methods that Pico calls on Main (Main registers the handlers as server).
 
-    // User-defined pointer for application context
-    void* userPointer = nullptr;
-
-    // Provider ID must be unique
-    static constexpr uint32_t providerId = 100;
-
-    // Method table for compile-time reflection
-    static constexpr auto methods = std::make_tuple(
-        &Pico2Main::ping,
-        &Pico2Main::debugPrint,
-        &Pico2Main::onBoot
-    );
+enum Pico2MainMethod : uint16_t {
+    P2M_PING        = 1,  /* args: int32 val                             | returns: int32 val */
+    P2M_DEBUG_PRINT = 2,  /* args: string message                        | returns: void */
+    P2M_ON_BOOT     = 3,  /* args: string serialString, int32 deviceMode | returns: bool success */
 };
 
-// ---------------------------------------------
-// Main2Pico Provider
-// RPC methods that Main boards implements, Pico has client to it and just calls
-// ---------------------------------------------
-struct Main2Pico {
-    std::function<int(int)> ping;
-    std::function<void(bool)> setLed;
-    std::function<bool()> getLedStatus;
-    std::function<void()> rebootFlashMode;
-    std::function<void()> reboot;  // Reboot the Pico
-    std::function<void(int,int,int)> setAxis;  // device, axis, value
-    std::function<void(uint8_t)> setMode;  // Set device mode (0=HID, 1=XInput), saves to flash and reboots
-    std::function<uint8_t()> getMode;  // Get current device mode: 0=HID, 1=XInput
-    std::function<bool(int, DeviceConfiguration)> plugDevice;  // Plug a device into a slot
-    std::function<bool(int)> unplugDevice;  // Unplug a device from a slot
+// ── Main2Pico method IDs ─────────────────────────────────────────────────
+// Methods that Main calls on Pico (Pico registers the handlers as server).
 
-    // User-defined pointer for application context
-    void* userPointer = nullptr;
-
-    static constexpr uint32_t providerId = 200;
-
-    static constexpr auto methods = std::make_tuple(
-        &Main2Pico::ping,
-        &Main2Pico::setLed,
-        &Main2Pico::getLedStatus,
-        &Main2Pico::rebootFlashMode,
-        &Main2Pico::reboot,
-        &Main2Pico::setAxis,
-        &Main2Pico::setMode,
-        &Main2Pico::getMode,
-        &Main2Pico::plugDevice,
-        &Main2Pico::unplugDevice
-    );
-};
-
-// ---------------------------------------------
-// Pc2Pico Provider
-// RPC methods that Pico provides, Desktop calls
-// ---------------------------------------------
-struct Pc2Pico {
-    std::function<int(int)> ping;
-    
-    static constexpr uint32_t providerId = 300;
-    
-    static constexpr auto methods = std::make_tuple(
-        &Pc2Pico::ping
-    );
-};
-
-// ---------------------------------------------
-// Pico2Pc Provider
-// RPC methods that Desktop provides, Pico calls
-// ---------------------------------------------
-struct Pico2Pc {
-    std::function<int(int)> ping;
-    std::function<void(std::string)> debugPrint;
-    
-    static constexpr uint32_t providerId = 301;
-    
-    static constexpr auto methods = std::make_tuple(
-        &Pico2Pc::ping,
-        &Pico2Pc::debugPrint
-    );
+enum Main2PicoMethod : uint16_t {
+    M2P_PING              = 1,   /* args: int32 val                                           | returns: int32 val */
+    M2P_SET_LED           = 2,   /* args: bool state                                          | returns: void */
+    M2P_GET_LED_STATUS    = 3,   /* args: void                                                | returns: bool state */
+    M2P_REBOOT_FLASH_MODE = 4,   /* args: void                                                | returns: bool (always true; triggers USB boot) */
+    M2P_REBOOT            = 5,   /* args: void                                                | returns: void (no reply; Pico reboots) */
+    M2P_SET_AXIS          = 6,   /* args: int32 device, int32 axis, int32 value               | returns: void */
+    M2P_SET_MODE          = 7,   /* args: int32 mode (0=HID, 1=XInput)                       | returns: void (saves to flash, reboots) */
+    M2P_GET_MODE          = 8,   /* args: void                                                | returns: int32 mode */
+    M2P_PLUG_DEVICE       = 9,   /* args: int32 slotIndex, int32 deviceType, int32 hat, int32 axesMask, int32 buttons | returns: bool success */
+    M2P_UNPLUG_DEVICE     = 10,  /* args: int32 slotIndex                                     | returns: bool success */
 };

@@ -42,8 +42,8 @@ enum {
 
 class TinyUsbGamepadDevice : public AbstractVirtualDevice {
 public:
-    // Constructor: gamepad_index (0-3), num_buttons (1-32), axes_bitmask (FLAG_MASK_GAMEPAD_AXIS_*), has_hat
-    TinyUsbGamepadDevice(uint8_t gamepad_index = 0, uint8_t num_buttons = 16, uint8_t axes_bitmask = 0x3F, bool has_hat = true);
+    // Constructor: name, gamepad_index (0-3), num_buttons (1-32), axes_bitmask (FLAG_MASK_GAMEPAD_AXIS_*), has_hat
+    TinyUsbGamepadDevice(const std::string& name = "InputProxy Gamepad", uint8_t gamepad_index = 0, uint8_t num_buttons = 16, uint8_t axes_bitmask = 0x3F, bool has_hat = true);
     virtual ~TinyUsbGamepadDevice();
 
     // AbstractVirtualDevice interface
@@ -52,6 +52,8 @@ public:
     bool init() override;
     void update() override;
     AxesDescription axesDescription() override;
+    std::string getName() const override { return m_name; }
+    DeviceType getDeviceType() const override { return DeviceType::GAMEPAD; }
 
     // Direct control methods
     void pressButton(uint8_t button);
@@ -75,6 +77,8 @@ public:
     const uint8_t* getHidDescriptor() const { return hidDescriptor; }
 
 private:
+    std::string m_name;
+
     // Packed report structure matching the HID descriptor exactly
     // This is sent directly to the host
     struct __attribute__((packed)) GamepadReport {
@@ -119,9 +123,6 @@ private:
     void updateHatFromButtons();
     uint8_t calculateHatValue() const;
 };
-
-// Forward declaration
-enum class DeviceType;
 
 // ==============================================================================
 // TinyUsbGamepadBuilder - Builder pattern for creating gamepad devices

@@ -74,17 +74,21 @@ AbstractDeviceManager* XinputDeviceManager::serialNumber(const std::string& seri
     return this;
 }
 
-bool XinputDeviceManager::plugDevice(uint8_t socketIndex, XInputDevice* device, const std::string& name) {
+bool XinputDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) {
     if (socketIndex >= MAX_XINPUT_SOCKETS) {
         return false;
     }
 
     if (sockets[socketIndex].occupied) {
-        return false;  // Socket already occupied
+        return false;
     }
 
-    sockets[socketIndex].device = device;
-    sockets[socketIndex].name = name;
+    if (device == nullptr) {
+        return false;
+    }
+
+    XInputDevice* xinputDevice = static_cast<XInputDevice*>(device);
+    sockets[socketIndex].device = xinputDevice;
     sockets[socketIndex].occupied = true;
 
     return true;

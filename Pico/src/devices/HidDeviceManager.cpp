@@ -27,7 +27,6 @@ HidDeviceManager::HidDeviceManager()
         deviceSockets[i].interfaceNum = 0;
         deviceSockets[i].endpointNum = 0;
         deviceSockets[i].stringIndex = 0;
-        deviceSockets[i].axesCount = 0;
     }
 }
 
@@ -84,28 +83,23 @@ void HidDeviceManager::cleanupDevice(UsbDevice& info) {
     }
 }
 
-bool HidDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device, const std::string& name, DeviceType deviceType, uint8_t axesCount) {
-    // Validate socket index
+bool HidDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) {
     if (socketIndex >= MAX_DEVICE_SOCKETS) {
         return false;
     }
-    
-    // Check if socket is already occupied
+
     if (deviceSockets[socketIndex].occupied) {
-        return false;  // Socket is occupied, must unplug first
+        return false;
     }
-    
-    // Validate device pointer
+
     if (device == nullptr) {
         return false;
     }
-    
-    // Fill socket info
+
     UsbDevice& info = deviceSockets[socketIndex];
     info.device = device;
-    info.name = name;
-    info.deviceType = deviceType;
-    info.axesCount = axesCount;
+    info.name = device->getName();
+    info.deviceType = device->getDeviceType();
     info.occupied = true;
 
     // Allocate USB resources based on socket index

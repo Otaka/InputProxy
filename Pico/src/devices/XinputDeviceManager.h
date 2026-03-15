@@ -58,8 +58,8 @@ public:
     // ===== XinputDeviceManager-specific Methods =====
 
     // Socket-based device management
-    bool plugDevice(uint8_t socketIndex, XInputDevice* device, const std::string& name);
-    bool unplugDevice(uint8_t socketIndex);
+    bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) override;
+    bool unplugDevice(uint8_t socketIndex) override;
     bool isSocketOccupied(uint8_t socketIndex) const;
 
     // Get occupied device count
@@ -68,7 +68,6 @@ public:
 private:
     struct XInputSocket {
         XInputDevice* device;
-        std::string name;
         bool occupied;
     };
 

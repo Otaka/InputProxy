@@ -59,8 +59,9 @@ const uint8_t hid_report_descriptor_mouse[] = {
 
 const uint16_t hid_report_descriptor_mouse_size = sizeof(hid_report_descriptor_mouse);
 
-TinyUsbMouseDevice::TinyUsbMouseDevice()
-    : reportChanged(false)
+TinyUsbMouseDevice::TinyUsbMouseDevice(const std::string& name)
+    : m_name(name)
+    , reportChanged(false)
 {
     memset(&mouseReport, 0, sizeof(mouseReport));
 }
@@ -254,7 +255,7 @@ TinyUsbMouseBuilder& TinyUsbMouseBuilder::name(const std::string& deviceName) {
 }
 
 AbstractVirtualDevice* TinyUsbMouseBuilder::build() {
-    return new TinyUsbMouseDevice();
+    return new TinyUsbMouseDevice(m_name);
 }
 
 std::string TinyUsbMouseBuilder::getName() const {

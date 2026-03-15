@@ -6,6 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+add_compile_definitions(MCO_MIN_STACK_SIZE=8192 MCO_DEFAULT_STACK_SIZE=8192 MCO_DEFAULT_STORAGE_SIZE=64)
+
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)
 
@@ -43,6 +45,7 @@ add_executable(InputProxy
     src/usb_descriptors.cpp
     ../shared/shared.cpp
     ../shared/corocgo/corocgo.cpp
+    ../shared/corocgo/corocrpc/corocrpc.cpp
     src/devices/AbstractVirtualDevice.cpp
     src/devices/AbstractDeviceManager.cpp
     src/devices/TinyUsbKeyboardDevice.cpp

@@ -14,19 +14,11 @@
 // Maximum number of device sockets
 #define MAX_DEVICE_SOCKETS 8
 
-// Device types
-enum class DeviceType {
-    KEYBOARD,
-    MOUSE,
-    GAMEPAD
-};
-
 // USB Device information for a socket
 struct UsbDevice {
     std::string name;
     AbstractVirtualDevice* device;
     DeviceType deviceType;
-    uint8_t axesCount;
     uint8_t interfaceNum;
     uint8_t endpointNum;
     uint8_t stringIndex;  // String descriptor index for interface name
@@ -55,13 +47,8 @@ public:
     const std::string& getSerialNumber() const { return m_serialNumber; }
 
     // Socket-based device management
-    // Plug a device into a specific socket (0-7)
-    // Returns true if successful, false if socket is occupied or index is invalid
-    bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device, const std::string& name, DeviceType deviceType, uint8_t axesCount = 0);
-    
-    // Unplug a device from a specific socket (0-7)
-    // Returns true if successful, false if socket was empty or index is invalid
-    bool unplugDevice(uint8_t socketIndex);
+    bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) override;
+    bool unplugDevice(uint8_t socketIndex) override;
     
     // Check if a socket is occupied
     bool isSocketOccupied(uint8_t socketIndex) const;

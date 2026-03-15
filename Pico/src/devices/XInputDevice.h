@@ -14,7 +14,7 @@
 
 class XInputDevice : public AbstractVirtualDevice {
 public:
-    XInputDevice(uint8_t gamepad_index = 0);
+    XInputDevice(uint8_t gamepad_index = 0, const std::string& name = "Xbox 360 Controller");
     virtual ~XInputDevice() = default;
 
     // AbstractVirtualDevice interface implementation
@@ -23,6 +23,8 @@ public:
     bool init() override;
     void update() override;
     AxesDescription axesDescription() override;
+    std::string getName() const override { return m_name; }
+    DeviceType getDeviceType() const override { return DeviceType::XINPUT_GAMEPAD; }
 
     // Get gamepad index
     uint8_t getGamepadIndex() const { return gamepadIndex; }
@@ -31,6 +33,7 @@ public:
     void handleRumble(const xinput_out_report_t* report);
 
 private:
+    std::string m_name;
     xinput_report_t report;
     uint8_t gamepadIndex;
     bool reportChanged;

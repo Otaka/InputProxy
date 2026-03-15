@@ -16,8 +16,9 @@ static const uint8_t AXIS_USAGE_CODES[8] = {
     HID_USAGE_DESKTOP_SLIDER   // SLIDER
 };
 
-TinyUsbGamepadDevice::TinyUsbGamepadDevice(uint8_t gamepad_index, uint8_t num_buttons, uint8_t axes_bitmask, bool has_hat)
-    : gamepadIndex(gamepad_index)
+TinyUsbGamepadDevice::TinyUsbGamepadDevice(const std::string& name, uint8_t gamepad_index, uint8_t num_buttons, uint8_t axes_bitmask, bool has_hat)
+    : m_name(name)
+    , gamepadIndex(gamepad_index)
     , numButtons(num_buttons > GAMEPAD_MAX_BUTTONS ? GAMEPAD_MAX_BUTTONS : num_buttons)
     , axesBitMask(axes_bitmask)
     , hasHat(has_hat)
@@ -545,7 +546,7 @@ TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::hat(bool enable) {
 }
 
 AbstractVirtualDevice* TinyUsbGamepadBuilder::build() {
-    return new TinyUsbGamepadDevice(m_gamepadIndex, m_buttonCount, m_axesBitMask, m_hasHat);
+    return new TinyUsbGamepadDevice(getName(), m_gamepadIndex, m_buttonCount, m_axesBitMask, m_hasHat);
 }
 
 std::string TinyUsbGamepadBuilder::getName() const {

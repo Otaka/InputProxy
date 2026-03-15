@@ -1,14 +1,36 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <map>
+#include <vector>
 
 struct CoSessionImpl;
 struct CoServerImpl;
 
 using coSession = std::shared_ptr<CoSessionImpl>;
 using coServer  = std::shared_ptr<CoServerImpl>;
+
+// Handler for a matched route. vars contains only the {name} path variables.
+using RouteHandler = std::function<void(coSession, std::map<std::string, std::string>)>;
+
+// HTTP router with path-pattern matching.
+// Register routes with endpoint(), then call dispatch() per incoming session.
+// Pattern segments like {id} match any single path component (no '/').
+// More specific routes (more literal segments) win over wildcard ones.
+struct CoHttpRouter {
+    void endpoint(const std::string& method, const std::string& path, RouteHandler handler);
+    void dispatch(coSession session) const;
+
+private:
+    struct Route {
+        std::string method;
+        std::vector<std::string> segments;
+        RouteHandler handler;
+    };
+    std::vector<Route> routes_;
+};
 
 // Create a non-blocking TCP server listening on the given port.
 coServer createServer(int port);

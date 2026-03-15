@@ -2,8 +2,9 @@
 #include "XInputDevice.h"
 #include "pico/time.h"
 
-XInputDevice::XInputDevice(uint8_t gamepad_index)
-    : gamepadIndex(gamepad_index)
+XInputDevice::XInputDevice(uint8_t gamepad_index, const std::string& name)
+    : m_name(name)
+    , gamepadIndex(gamepad_index)
     , reportChanged(false)
     , lastReportTime(0)
 {

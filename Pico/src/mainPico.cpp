@@ -1,9 +1,7 @@
-#define RPCMANAGER_STD_STRING
-
 #include <string.h>
 #include <cstdlib>
 #include <cstdarg>
-#include <ctime>
+#include <algorithm>
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
@@ -11,11 +9,14 @@
 #include "pico/time.h"
 #include "pico/stdio.h"
 #include "tusb.h"
-#include "../shared/corocgo/corocgo.h"
-#include "UartManagerPico.h"
-#include "../shared/simplerpc/simplerpc.h"
+#include "hardware/watchdog.h"
+#include "hardware/uart.h"
+
+#include "../shared/Corocgo/corocgo.h"
+#include "../shared/Corocgo/corocrpc/corocrpc.h"
 #include "../shared/rpcinterface.h"
 #include "../shared/shared.h"
+#include "UartManagerPico.h"
 #include "PersistentStorage.h"
 #include "devices/AbstractDeviceManager.h"
 #include "devices/HidDeviceManager.h"
@@ -24,29 +25,29 @@
 #include "devices/TinyUsbMouseDevice.h"
 #include "devices/TinyUsbGamepadDevice.h"
 #include "devices/XInputDevice.h"
-#include "hardware/watchdog.h"
-#include "hardware/uart.h"
 
-using namespace simplerpc;
+using namespace corocrpc;
 using namespace corocgo;
 
-static UartManagerPico* uartManager = nullptr;
-static char uartInputBuffer[5120];
-// RPC Manager for UART communication with Mainboard
-static RpcManager<>* uartRpcManager = nullptr;
-static Pico2Main pico2MainRpcClient;
-static Main2Pico main2PicoRpcServer;
-std::vector<std::string>messagesToPrint;
+static UartManagerPico* uartManager  = nullptr;
+static StreamFramer*    framer       = nullptr;
+static Channel<RpcPacket>* rpcOutCh  = nullptr;
+static Channel<RpcPacket>* rpcInCh   = nullptr;
+static RpcManager*      rpcManager   = nullptr;
+
 static bool ledState = false;
 
-// Device Manager - manages devices based on current mode (HID or XInput)
 static AbstractDeviceManager* deviceManager = nullptr;
-
-// Persistent storage for configuration (mode, etc.)
 static PersistentStorage persistentStorage;
 
-static Channel<bool>*rebootChannel;
-static Channel<std::string>*logChannel;
+static Channel<bool>*        rebootChannel = nullptr;
+static Channel<std::string>* logChannel    = nullptr;
+
+static char uartInputBuffer[2120];
+
+// ---------------------------------------------------------------------------
+// LED / utility helpers
+// ---------------------------------------------------------------------------
 
 void initPicoLed() {
     stdio_init_all();
@@ -72,200 +73,238 @@ void rebootToBootsel() {
     reset_usb_boot(0, 0);
 }
 
-void initDebugPrintUart1(){
-    stdio_init_all();
-    uart_init(uart1, 115200);
-    gpio_set_function(4, GPIO_FUNC_UART);  // TX
-    gpio_set_function(5, GPIO_FUNC_UART);  // RX
-}
-
-void printfUart1(const char* format, ...) {
-    char buf[256];
-    va_list args;
-    va_start(args, format);
-    int len = vsnprintf(buf, sizeof(buf), format, args);
-    va_end(args);
-    if (len > 0) {
-        uart_write_blocking(uart1, (const uint8_t*)buf, len);
-    }
-}
-
-
 std::string generateRandomDeviceId() {
-    const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    static const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const int charsetSize = sizeof(charset) - 1;
     std::string result;
     result.reserve(5);
-
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; i++)
         result += charset[rand() % charsetSize];
-    }
-
     return result;
 }
 
-void initUartRpcSystem() {
-    // Initialize UART RPC Manager for Mainboard communication
-    uartRpcManager = new RpcManager<>();
-    uartRpcManager->addInputFilter(new StreamFramerInputFilter());
-    uartRpcManager->addOutputFilter(new StreamFramerOutputFilter());
-    uartRpcManager->setDefaultTimeout(5000);
+void reboot() {
+    sleep_ms(100);
+    watchdog_enable(1, false);
+    while (true) { tight_loop_contents(); }
+}
 
-    // UART sends via UartManager
-    uartRpcManager->setOnSendCallback([](const char* data, int len) {
-        if (data && len > 0 && uartManager) {
-            uartManager->sendData(data, len);
+// ---------------------------------------------------------------------------
+// plugDevice helper (same logic as before, extracted for clarity)
+// ---------------------------------------------------------------------------
+
+static bool doPlugDevice(int slotIndex, const DeviceConfiguration& dc) {
+    if (!deviceManager) return false;
+
+    DeviceMode currentMode = deviceManager->getMode();
+
+    if (currentMode == DeviceMode::HID_MODE) {
+        if (dc.deviceType == 0) {  // Keyboard
+            return deviceManager->plugDevice(slotIndex,
+                TinyUsbKeyboardBuilder().name("InputProxy Keyboard").build());
+        } else if (dc.deviceType == 1) {  // Mouse
+            return deviceManager->plugDevice(slotIndex,
+                TinyUsbMouseBuilder().name("InputProxy Mouse").build());
+        } else if (dc.deviceType == 2) {  // HID Gamepad
+            std::string name = "InputProxy Gamepad " + std::to_string(slotIndex);
+            TinyUsbGamepadBuilder gb;
+            gb.gamepadIndex(slotIndex)
+              .name(name)
+              .axes(dc.config.hidGamepadConfig.axesMask)
+              .buttons(dc.config.hidGamepadConfig.buttons)
+              .hat(dc.config.hidGamepadConfig.hat != 0);
+            return deviceManager->plugDevice(slotIndex, gb.build());
+        }
+    } else if (currentMode == DeviceMode::XINPUT_MODE) {
+        if (dc.deviceType == 3) {  // Xbox360 Gamepad
+            std::string name = "Xbox 360 Controller " + std::to_string(slotIndex + 1);
+            return deviceManager->plugDevice(slotIndex, new XInputDevice(slotIndex, name));
+        }
+    }
+
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// RPC setup
+// ---------------------------------------------------------------------------
+
+void initUartRpcSystem() {
+    framer    = new StreamFramer();
+    rpcOutCh  = makeChannel<RpcPacket>(8);
+    rpcInCh   = makeChannel<RpcPacket>(8);
+    rpcManager = new RpcManager(rpcOutCh, rpcInCh, /*timeoutMs=*/5000);
+
+    RpcManager* rpc = rpcManager;
+
+    // ── Server: methods Main calls on Pico ───────────────────────────────
+
+    // ping(int32 val) → int32 val
+    rpc->registerMethod(M2P_PING, [rpc](RpcArg* arg) -> RpcArg* {
+       // toggleDefaultLed();
+        int32_t val = arg->getInt32();
+        RpcArg* out = rpc->getRpcArg();
+        out->putInt32(val+1);
+        return out;
+    });
+
+    // setLed(bool state) → void
+    rpc->registerMethod(M2P_SET_LED, [](RpcArg* arg) -> RpcArg* {
+        enableDefaultLed(arg->getBool());
+        return nullptr;
+    });
+
+    // getLedStatus() → bool state
+    rpc->registerMethod(M2P_GET_LED_STATUS, [rpc](RpcArg* arg) -> RpcArg* {
+        RpcArg* out = rpc->getRpcArg();
+        out->putBool(checkDefaultLed());
+        return out;
+    });
+
+    // rebootFlashMode() → bool (triggers USB boot; no real reply)
+    rpc->registerMethod(M2P_REBOOT_FLASH_MODE, [rpc](RpcArg* arg) -> RpcArg* {
+        rebootChannel->send(true);
+        RpcArg* out = rpc->getRpcArg();
+        out->putBool(true);
+        return out;
+    });
+
+    // reboot() → void (Pico reboots; no reply sent)
+    rpc->registerMethod(M2P_REBOOT, [](RpcArg* arg) -> RpcArg* {
+        toggleDefaultLed();
+        const char*rebootMethodMessage="Received reboot request";
+        logChannel->send(rebootMethodMessage);
+
+        sleep(1000);
+        rebootChannel->send(false);
+        return nullptr;
+    });
+
+    // setAxis(int32 device, int32 axis, int32 value) → void
+    rpc->registerMethod(M2P_SET_AXIS, [](RpcArg* arg) -> RpcArg* {
+        int32_t device = arg->getInt32();
+        int32_t axis   = arg->getInt32();
+        int32_t value  = arg->getInt32();
+        if (deviceManager) {
+            toggleDefaultLed();
+            deviceManager->setAxis(device, axis, value);
+        }
+        return nullptr;
+    });
+
+    // setMode(int32 mode) → void  (saves to flash, reboots)
+    rpc->registerMethod(M2P_SET_MODE, [](RpcArg* arg) -> RpcArg* {
+        DeviceMode newMode = static_cast<DeviceMode>(arg->getInt32());
+        if (deviceManager && deviceManager->getMode() == newMode) return nullptr;
+        persistentStorage.put("mode", newMode == DeviceMode::XINPUT_MODE ? "XINPUT" : "HID");
+        persistentStorage.flush();
+        rebootChannel->send(false);
+        return nullptr;
+    });
+
+    // getMode() → int32 mode
+    rpc->registerMethod(M2P_GET_MODE, [rpc](RpcArg* arg) -> RpcArg* {
+        RpcArg* out = rpc->getRpcArg();
+        out->putInt32(deviceManager ? static_cast<int32_t>(deviceManager->getMode()) : -1);
+        return out;
+    });
+
+    // plugDevice(int32 slotIndex, int32 deviceType, int32 hat, int32 axesMask, int32 buttons) → bool
+    rpc->registerMethod(M2P_PLUG_DEVICE, [rpc](RpcArg* arg) -> RpcArg* {
+        int32_t slotIndex  = arg->getInt32();
+        int32_t deviceType = arg->getInt32();
+        int32_t hat        = arg->getInt32();
+        int32_t axesMask   = arg->getInt32();
+        int32_t buttons    = arg->getInt32();
+
+        DeviceConfiguration dc;
+        dc.deviceType = deviceType;
+        dc.config.hidGamepadConfig.hat      = static_cast<uint8_t>(hat);
+        dc.config.hidGamepadConfig.axesMask = static_cast<uint16_t>(axesMask);
+        dc.config.hidGamepadConfig.buttons  = static_cast<uint8_t>(buttons);
+
+        bool ok = doPlugDevice(static_cast<int>(slotIndex), dc);
+        RpcArg* out = rpc->getRpcArg();
+        out->putBool(ok);
+        return out;
+    });
+
+    // unplugDevice(int32 slotIndex) → bool
+    rpc->registerMethod(M2P_UNPLUG_DEVICE, [rpc](RpcArg* arg) -> RpcArg* {
+        int32_t slotIndex = arg->getInt32();
+        bool ok = false;
+        if (deviceManager) {
+            ok = deviceManager->unplugDevice(slotIndex);
+        }
+        RpcArg* out = rpc->getRpcArg();
+        out->putBool(ok);
+        return out;
+    });
+
+    // ── Transport bridges ─────────────────────────────────────────────────
+
+    // Outbound: rpcOutCh → frame → UART send
+    coro([]() {
+        while (true) {
+            auto res = rpcOutCh->receive();
+            if (res.error) break;
+            FramedPacket fp = framer->createPacket(
+                0, reinterpret_cast<const char*>(res.value.data), res.value.size);
+            if (fp.size > 0)
+                uartManager->sendData(reinterpret_cast<const char*>(fp.data), fp.size);
         }
     });
 
-    main2PicoRpcServer.ping = [](int val) -> int {
-        return val;
-    };
-
-    main2PicoRpcServer.setLed = [](bool state) {
-        enableDefaultLed(state);
-    };
-
-    main2PicoRpcServer.setAxis = [](int device, int axis, int value) {
-        if (!deviceManager) return;
-        toggleDefaultLed();
-        deviceManager->setAxis(device, axis, value);
-    };
-
-    main2PicoRpcServer.getLedStatus = []() -> bool {
-        return checkDefaultLed();
-    };
-
-    main2PicoRpcServer.rebootFlashMode = []() -> bool {
-        rebootChannel->sendExternalNoBlock(true);
-        return true;
-    };
-
-    main2PicoRpcServer.reboot = []() {
-        rebootChannel->sendExternalNoBlock(false);
-    };
-
-    main2PicoRpcServer.setMode = [](uint8_t mode) {
-        DeviceMode newMode = static_cast<DeviceMode>(mode);
-
-        // If same as current mode, skip
-        if (deviceManager && deviceManager->getMode() == newMode) {
-            return;
+    // Inbound: framer.readCh → deframe → rpcInCh
+    coro([]() {
+        while (true) {
+            auto res = framer->readCh->receive();
+            if (res.error) break;
+            static RpcPacket pkt;
+            pkt.size = res.value.getDataSize();
+            memcpy(pkt.data, res.value.getData(), pkt.size);
+            rpcInCh->send(pkt);
         }
-
-        // Different mode: persist and schedule reboot
-        persistentStorage.put("mode", newMode == DeviceMode::XINPUT_MODE ? "XINPUT" : "HID");
-        persistentStorage.flush();
-        rebootChannel->sendExternalNoBlock(false);
-    };
-
-    main2PicoRpcServer.getMode = []() -> uint8_t {
-        if (!deviceManager) {
-            return 0xFF;  // Return invalid value when no mode is set
-        }
-        return static_cast<uint8_t>(deviceManager->getMode());
-    };
-
-    main2PicoRpcServer.plugDevice = [](int slotIndex, DeviceConfiguration deviceConfig) -> bool {
-        if (!deviceManager) {
-            return false;
-        }
-
-        DeviceMode currentMode = deviceManager->getMode();
-
-        // Check if device type is compatible with current mode
-        // deviceType: 0=Keyboard, 1=Mouse, 2=HID Gamepad, 3=Xbox360 Gamepad
-        if (deviceConfig.deviceType == 3) { // Xbox360 Gamepad
-            if (currentMode != DeviceMode::XINPUT_MODE) {
-                return false; // XInput devices only work in XInput mode
-            }
-        } else if (deviceConfig.deviceType >= 0 && deviceConfig.deviceType <= 2) {
-            if (currentMode != DeviceMode::HID_MODE) {
-                return false; // HID devices only work in HID mode
-            }
-        } else {
-            return false; // Unknown device type
-        }
-
-        // Create and plug the device
-        if (currentMode == DeviceMode::HID_MODE) {
-            HidDeviceManager* hidManager = static_cast<HidDeviceManager*>(deviceManager);
-
-            if (deviceConfig.deviceType == 0) { // Keyboard
-                TinyUsbKeyboardBuilder keyboardBuilder;
-                return hidManager->plugDevice(slotIndex, keyboardBuilder.name("InputProxy Keyboard").build(),
-                                            keyboardBuilder.getName(), keyboardBuilder.getDeviceType());
-            } else if (deviceConfig.deviceType == 1) { // Mouse
-                TinyUsbMouseBuilder mouseBuilder;
-                return hidManager->plugDevice(slotIndex, mouseBuilder.name("InputProxy Mouse").build(),
-                                            mouseBuilder.getName(), mouseBuilder.getDeviceType());
-            } else if (deviceConfig.deviceType == 2) { // HID Gamepad
-                TinyUsbGamepadBuilder gamepadBuilder;
-                std::string gamepadName = "InputProxy Gamepad " + std::to_string(slotIndex);
-                gamepadBuilder.gamepadIndex(slotIndex)
-                          .name(gamepadName)
-                          .axes(deviceConfig.config.hidGamepadConfig.axesMask)
-                          .buttons(deviceConfig.config.hidGamepadConfig.buttons)
-                          .hat(deviceConfig.config.hidGamepadConfig.hat != 0);
-
-                return hidManager->plugDevice(slotIndex, gamepadBuilder.build(),
-                                            gamepadBuilder.getName(),
-                                            gamepadBuilder.getDeviceType(),
-                                            gamepadBuilder.getAxesCount());
-            }
-        } else if (currentMode == DeviceMode::XINPUT_MODE) {
-            XinputDeviceManager* xinputManager = static_cast<XinputDeviceManager*>(deviceManager);
-
-            if (deviceConfig.deviceType == 3) { // Xbox360 Gamepad
-                XInputDevice* gamepad = new XInputDevice(slotIndex);
-                std::string gamepadName = "Xbox 360 Controller " + std::to_string(slotIndex + 1);
-                return xinputManager->plugDevice(slotIndex, gamepad, gamepadName);
-            }
-        }
-
-        return false;
-    };
-
-    main2PicoRpcServer.unplugDevice = [](int slotIndex) -> bool {
-        if (!deviceManager) {
-            return false;
-        }
-
-        DeviceMode currentMode = deviceManager->getMode();
-
-        if (currentMode == DeviceMode::HID_MODE) {
-            HidDeviceManager* hidManager = static_cast<HidDeviceManager*>(deviceManager);
-            return hidManager->unplugDevice(slotIndex);
-        } else if (currentMode == DeviceMode::XINPUT_MODE) {
-            XinputDeviceManager* xinputManager = static_cast<XinputDeviceManager*>(deviceManager);
-            return xinputManager->unplugDevice(slotIndex);
-        }
-
-        return false;
-    };
-
-    uartRpcManager->registerServer(main2PicoRpcServer);
-
-    pico2MainRpcClient = uartRpcManager->createClient<Pico2Main>();
+    });
 }
 
-void reboot() {
-    sleep_ms(100);  // Brief delay to ensure all communication completes
-    watchdog_enable(1, false);
-    while(true) { tight_loop_contents(); }
+// ---------------------------------------------------------------------------
+// RPC call wrappers (Pico → Main)
+// ---------------------------------------------------------------------------
+
+// Announces this Pico to Main. Returns true when Main acknowledges.
+// Must be called from a coroutine (blocks until RPC_OK or timeout).
+static bool rpcOnBoot(const std::string& deviceId, DeviceMode bootMode) {
+    RpcArg* arg = rpcManager->getRpcArg();
+    arg->putString(deviceId.c_str());
+    arg->putInt32(static_cast<int32_t>(bootMode));
+    RpcResult res = rpcManager->call(P2M_ON_BOOT, arg);
+    rpcManager->disposeRpcArg(arg);
+    bool accepted = (res.error == RPC_OK && res.arg && res.arg->getBool());
+    if (res.arg) rpcManager->disposeRpcArg(res.arg);
+    return accepted;
 }
+
+// Sends a log message to Main (void; result ignored).
+// Must be called from a coroutine.
+static void rpcDebugPrint(const std::string& message) {
+    RpcArg* arg = rpcManager->getRpcArg();
+    arg->putString(message.c_str());
+    rpcManager->callNoResponse(P2M_DEBUG_PRINT, arg);
+    rpcManager->disposeRpcArg(arg);
+}
+
+// ---------------------------------------------------------------------------
 
 int _main() {
     srand(to_us_since_boot(get_absolute_time()));
-    rebootChannel=makeChannel<bool>(1,1);
-    logChannel = makeChannel<std::string>(10);
+    rebootChannel = makeChannel<bool>(1, 1);
+    logChannel    = makeChannel<std::string>(10);
 
     initPicoLed();
-    initDebugPrintUart1();
-    // Initialize TinyUSB
     tusb_init();
+    tud_task();
 
-    // Load persistent storage
     persistentStorage.load();
 
     // Get or generate deviceId
@@ -280,110 +319,157 @@ int _main() {
     std::string savedMode = persistentStorage.get("mode");
     DeviceMode bootMode = (savedMode == "XINPUT") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
     if (bootMode == DeviceMode::XINPUT_MODE) {
-        XinputDeviceManager* xinputManager = new XinputDeviceManager();
-        xinputManager->vendorId(0x045E)
-                        ->productId(0x028E)
-                        ->manufacturer("Microsoft")
-                        ->productName("Xbox 360 Controller")
-                        ->serialNumber("000000");
-        deviceManager = xinputManager;
+        XinputDeviceManager* xm = new XinputDeviceManager();
+        xm->vendorId(0x045E)->productId(0x028E)
+          ->manufacturer("Microsoft")
+          ->productName("Xbox 360 Controller")
+          ->serialNumber("000000");
+        deviceManager = xm;
     } else {
-        HidDeviceManager* hidManager = new HidDeviceManager();
-        hidManager->vendorId(0x1209)
-                    ->productId(0x0003)
-                    ->manufacturer("InputProxy")
-                    ->productName("InputProxy Composite Device")
-                    ->serialNumber("20260118");
-        deviceManager = hidManager;
-        hidManager->plugDevice(0, TinyUsbKeyboardBuilder().build(), "", DeviceType::KEYBOARD, 3);
+        HidDeviceManager* hm = new HidDeviceManager();
+        hm->vendorId(0x1209)->productId(0x0003)
+          ->manufacturer("InputProxy")
+          ->productName("InputProxy Composite Device")
+          ->serialNumber("20260118");
+        deviceManager = hm;
+        deviceManager->plugDevice(0, TinyUsbKeyboardBuilder().name("InputProxy Keyboard").build());
+        deviceManager->plugDevice(1, TinyUsbMouseBuilder().name("InputProxy Mouse").build());
+        deviceManager->plugDevice(2, TinyUsbGamepadBuilder().name("InputProxy Gamepad").axes(FLAG_MASK_GAMEPAD_AXIS_LX|FLAG_MASK_GAMEPAD_AXIS_LY).buttons(32).hat(true).build());
+        deviceManager->plugDevice(3, TinyUsbGamepadBuilder().name("InputProxy Gamepad 2").axes(FLAG_MASK_GAMEPAD_AXIS_LX|FLAG_MASK_GAMEPAD_AXIS_LY|FLAG_MASK_GAMEPAD_AXIS_LZ).buttons(8).hat(false).build());
     }
     setDeviceManager(deviceManager);
+    //keyboard test
+    coro([](){
+        int keyboardDeviceIndex=0;
+        while(true) {
+            deviceManager->setAxis(keyboardDeviceIndex,KEY_NUM_LOCK,1000);
+            sleep(1000);
+            deviceManager->setAxis(keyboardDeviceIndex,KEY_NUM_LOCK,0);
+            sleep(1000);
+        }
+    });
+    
+    //mouse test
+    coro([](){
+        int mouseDeviceIndex=1;
+        for(int i=0;i<20;i++){
+            deviceManager->setAxis(mouseDeviceIndex,MOUSE_AXIS_X_MINUS,1);
+            sleep(20);
+        }
+        sleep(1000);
+
+        for(int i=0;i<20;i++){
+            deviceManager->setAxis(mouseDeviceIndex,MOUSE_AXIS_X_PLUS,1);
+            sleep(20);
+        }
+        sleep(1000);
+    });
+    
+    
+    //gamepad test
+    coro([](){
+        int gamepadDeviceIndex=2;
+        while(true) {
+            for(int i=0;i<2;i++){
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_1,1000);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_1,0);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_2,1000);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_2,0);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LX_MINUS,1000);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LX_MINUS,0);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LY_MINUS,1000);
+                sleep(200);
+                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LY_MINUS,0);
+                sleep(200);
+            }
+        }
+    });
+    
+
+    /*TinyUsbGamepadBuilder gb;
+    gb.gamepadIndex(1).name("InputProxy Gamepad 0").axes(2).buttons(8).hat(true);
+    deviceManager->plugDevice(1, gb.build());
+    coro([](){
+        while(true){
+            deviceManager->setAxis(1,10,1000);
+            sleep(500);
+            deviceManager->setAxis(1,10,0);
+            sleep(500);
+        }
+    });*/
+
     deviceManager->init();
-
     uartManager = new UartManagerPico();
-
     initUartRpcSystem();
 
     enableDefaultLed(true);
     sleep_ms(100);
     enableDefaultLed(false);
-    for(int i=0;i<5;i++){
-        printfUart1("Test uart output=%d\n\r", i);
-        sleep_ms(1000);
-    }
-
-    //uart read coroutine
+    // UART → framer coroutine (interrupt-driven read, feeds StreamFramer)
     coro([]() {
         while (true) {
             size_t len = uartManager->read(uartInputBuffer, sizeof(uartInputBuffer));
-            if (len > 0 && uartRpcManager) {
-                uartRpcManager->processInput(uartInputBuffer, len);
+            if (len == 0) continue;
+            // Feed bytes to framer in MAX_SIZE chunks
+            size_t offset = 0;
+            while (offset < len) {
+                RawChunk chunk;
+                uint16_t chunkLen = static_cast<uint16_t>(
+                    std::min(len - offset, (size_t)RawChunk::MAX_SIZE));
+                memcpy(chunk.data, uartInputBuffer + offset, chunkLen);
+                chunk.len = chunkLen;
+                framer->writeCh->send(chunk);
+                offset += chunkLen;
             }
         }
     });
 
-    while (!pico2MainRpcClient.onBoot(deviceId, bootMode)) {
-        sleep(300);
-    }
-    
-    // //log coroutine
+    rpcOnBoot(deviceId, bootMode);
+    // Log coroutine — drains logChannel and sends debugPrint to Main
     coro([]() {
-         while (true) {
+        while (true) {
             auto [logLine, error] = logChannel->receive();
-            if (error)
-                break;
-            pico2MainRpcClient.debugPrint(logLine.c_str());
+            if (error) break;
+            rpcDebugPrint(logLine);
         }
     });
 
-    //reboot coroutine
+    // Reboot coroutine
     coro([]() {
         while (true) {
             auto [rebootValue, error] = rebootChannel->receive();
-            if (error)
-                break;
-            if (rebootValue==true) {
-                rebootToBootsel();
-            } else {
-                reboot();
-            }
+            if (error) break;
+            if (rebootValue) rebootToBootsel();
+            else             reboot();
         }
     });
 
-    
-
-    //send periodic message
+    // Periodic heartbeat — sends "Hello world N" to Main every second
     coro([]() {
-        int index=0;
+        int index = 0;
         char buffer[256];
         while (true) {
             sleep(1000);
-            toggleDefaultLed();
+            //toggleDefaultLed();
             sprintf(buffer, "Hello world %d", index++);
             logChannel->send(buffer);
         }
     });
 
-    //every tick coroutine
+    // Main loop — update USB devices every tick
     while (true) {
-        // Update all devices through DeviceManager
         deviceManager->update();
-
-        //process usb tasks
         tud_task();
-        sleep(1);
+        coro_yield();
     }
+
     return 0;
-}
-
-
-int testUart(){
-    initPicoLed();
-    int counter = 0;
-    while(true){
-        toggleDefaultLed();
-       
-    }
 }
 
 

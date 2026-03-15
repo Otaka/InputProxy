@@ -19,7 +19,7 @@ enum {
 
 class TinyUsbMouseDevice : public AbstractVirtualDevice {
 public:
-    TinyUsbMouseDevice();
+    explicit TinyUsbMouseDevice(const std::string& name = "InputProxy Mouse");
     virtual ~TinyUsbMouseDevice() = default;
 
     // AbstractVirtualDevice interface implementation
@@ -28,6 +28,8 @@ public:
     bool init() override;
     void update() override;
     AxesDescription axesDescription() override;
+    std::string getName() const override { return m_name; }
+    DeviceType getDeviceType() const override { return DeviceType::MOUSE; }
 
     // Mouse control methods
     void pressButton(uint8_t button);      // 0=left, 1=right, 2=middle, 3=back, 4=forward
@@ -44,6 +46,8 @@ public:
     uint8_t getInterfaceNum() const { return ITF_NUM_MOUSE; }
 
 private:
+    std::string m_name;
+
     // Mouse report structure
     struct MouseReport {
         uint8_t buttons;   // Bit 0: left, 1: right, 2: middle, 3: back, 4: forward
@@ -68,9 +72,6 @@ private:
 // Global HID report descriptor for mouse interface
 extern const uint8_t hid_report_descriptor_mouse[];
 extern const uint16_t hid_report_descriptor_mouse_size;
-
-// Forward declaration
-enum class DeviceType;
 
 // ==============================================================================
 // TinyUsbMouseBuilder - Builder pattern for creating mouse devices

@@ -33,7 +33,7 @@ enum {
 
 class TinyUsbKeyboardDevice : public AbstractVirtualDevice {
 public:
-    TinyUsbKeyboardDevice();
+    explicit TinyUsbKeyboardDevice(const std::string& name = "InputProxy Keyboard");
     virtual ~TinyUsbKeyboardDevice() = default;
 
     // AbstractVirtualDevice interface implementation
@@ -42,6 +42,8 @@ public:
     bool init() override;
     void update() override;
     AxesDescription axesDescription() override;
+    std::string getName() const override { return m_name; }
+    DeviceType getDeviceType() const override { return DeviceType::KEYBOARD; }
 
     // Consumer control (multimedia keys)
     void pressConsumerKey(uint16_t usage_code);
@@ -56,6 +58,8 @@ public:
     uint8_t getInterfaceNum() const { return ITF_NUM_KEYBOARD; }
 
 private:
+    std::string m_name;
+
     // NKRO bitmap: 256 bits for all possible keycodes
     uint8_t nkroKeymap[32]; // 32 bytes = 256 bits
 
@@ -95,9 +99,6 @@ private:
 // Global HID report descriptor for keyboard interface
 extern const uint8_t hid_report_descriptor_keyboard[];
 extern const uint16_t hid_report_descriptor_keyboard_size;
-
-// Forward declaration
-enum class DeviceType;
 
 // ==============================================================================
 // TinyUsbKeyboardBuilder - Builder pattern for creating keyboard devices

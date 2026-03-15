@@ -2,7 +2,17 @@
 #define ABSTRACT_VIRTUAL_DEVICE_H
 
 #include <functional>
+#include <string>
 #include <stdint.h>
+
+// Device type identifier – carried by each device so managers don't need
+// the caller to pass it separately.
+enum class DeviceType {
+    KEYBOARD,
+    MOUSE,
+    GAMEPAD,
+    XINPUT_GAMEPAD
+};
 
 // Structure describing a single axis/button control
 struct AxisDescription {
@@ -38,6 +48,10 @@ public:
     // Get description of all axes (buttons and axes)
     // Index in returned array corresponds to axis index
     virtual AxesDescription axesDescription() = 0;
+
+    // Self-describing device identity (used by managers via plugDevice)
+    virtual std::string getName() const = 0;
+    virtual DeviceType getDeviceType() const = 0;
 };
 
 #endif // ABSTRACT_VIRTUAL_DEVICE_H

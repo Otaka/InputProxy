@@ -2,7 +2,7 @@
 // Platform detection
 // ---------------------------------------------------------------------------
 
-#if defined(RASPBERRYPI_PICO) || defined(PICO_ON_DEVICE) || defined(LIB_PICO_PLATFORM)
+#if defined(RASPBERRYPI_PICO) || defined(PICO_PLATFORM) || defined(LIB_PICO_PLATFORM)
     #define COROCGO_PLATFORM_PICO
 #elif defined(_WIN32)
     #define COROCGO_PLATFORM_WINDOWS
@@ -110,14 +110,7 @@ void scheduler_stop();
 void coro_yield();
 void sleep(int milliseconds);
 
-class Monitor {
-    void* monitor;
-public:
-    Monitor(void* m):monitor(m) {}
-    void wake();
-};
-
-void exec_thread(std::function<void(Monitor)> future);
+void exec_thread(std::function<void(std::function<void()>)> future);
 std::pair<int,int> wait_file(int fd, int modeBitFlag);
 
 // internal monitor bridge (used by Channel template)
@@ -208,7 +201,7 @@ public:
         }
         delete[] buffer;
     }
-    bool send(T value) {
+    bool send(const T& value) {
         if(_closed.load(std::memory_order_relaxed)) return false;
         while (count>=bufferSize && !_closed.load(std::memory_order_relaxed)) {
             if (_extEnabled) {

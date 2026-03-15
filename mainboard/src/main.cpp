@@ -5,23 +5,23 @@
 #include "CoHttpServer.h"
 #include "RestApi.h"
 #include "../shared/shared.h"
-#define RPCMANAGER_STD_STRING
-#include "simplerpc/simplerpc.h"
+#include "corocrpc/corocrpc.h"
 #include "rpcinterface.h"
 #include "UartManager.h"
 #include "RealDeviceManager.h"
 #include "EmulationBoard.h"
 
-using namespace simplerpc;
+using namespace corocrpc;
 using namespace corocgo;
 
-// Per-UART link: bundles UartManager + RPC stack for one Pico connection
+// Per-UART link: bundles UartManager + StreamFramer + RPC stack for one Pico connection
 struct UartRpcLink {
-    UART_CHANNEL channel;
-    UartManager* uartManager;
-    RpcManager<>* rpcManager;
-    Pico2Main pico2MainServer;
-    Main2Pico main2PicoClient;
+    UART_CHANNEL         channel;
+    UartManager*         uartManager;
+    StreamFramer*        framer;
+    Channel<RpcPacket>*  rpcOutCh;
+    Channel<RpcPacket>*  rpcInCh;
+    RpcManager*          rpcManager;
 };
 
 std::vector<UartRpcLink> uartLinks;
@@ -32,7 +32,8 @@ int nextEmulationBoardId = 1;
 
 // Channel for axis events from real devices
 Channel<AxisEvent>* axisEventChannel;
-RealDeviceManager*deviceManager;
+RealDeviceManager* deviceManager;
+
 
 // ---------------------------------------------------------------------------
 // UART detection and RPC system setup
@@ -52,9 +53,12 @@ void detectUarts() {
         uart->flushInput();
 
         UartRpcLink link;
-        link.channel = ch;
+        link.channel     = ch;
         link.uartManager = uart;
-        link.rpcManager = nullptr;
+        link.framer      = nullptr;
+        link.rpcOutCh    = nullptr;
+        link.rpcInCh     = nullptr;
+        link.rpcManager  = nullptr;
         uartLinks.push_back(std::move(link));
         std::cout << "UART" << ch << ": detected at " << uart->getActiveDevicePath() << std::endl;
     }
@@ -71,68 +75,101 @@ bool initRpcSystem() {
     }
 
     for (auto& link : uartLinks) {
-        auto* rpc = new RpcManager<>();
-        rpc->addInputFilter(new StreamFramerInputFilter());
-        rpc->addOutputFilter(new StreamFramerOutputFilter());
-        rpc->setDefaultTimeout(2000);
+        link.framer    = new StreamFramer();
+        link.rpcOutCh  = makeChannel<RpcPacket>(8);
+        link.rpcInCh   = makeChannel<RpcPacket>(8);
+        link.rpcManager = new RpcManager(link.rpcOutCh, link.rpcInCh, /*timeoutMs=*/2000);
 
-        UartManager* uart = link.uartManager;
-        rpc->setOnSendCallback([uart](const char* data, int len) {
-            if (data && len > 0) uart->uartSend(data, len);
+        RpcManager*         rpc    = link.rpcManager;
+        StreamFramer*       framer = link.framer;
+        UartManager*        uart   = link.uartManager;
+        Channel<RpcPacket>* rpcOutChannel  = link.rpcOutCh;
+        Channel<RpcPacket>* rpcInChannel   = link.rpcInCh;
+        UART_CHANNEL        uartChannel     = link.channel;
+
+        // ── Server: methods Pico calls on Main ────────────────────────────
+
+        // ping(int32 val) → int32 val
+        rpc->registerMethod(P2M_PING, [rpc](RpcArg* arg) -> RpcArg* {
+            int32_t val = arg->getInt32();
+            RpcArg* out = rpc->getRpcArg();
+            out->putInt32(val);
+            return out;
         });
 
-        UART_CHANNEL ch = link.channel;
-        rpc->onError([ch](int code, const char* msg) {
-            std::cerr << "[RPC ERROR UART" << ch << " code=" << code << "] "
-                      << (msg ? msg : "") << std::endl;
+        // debugPrint(string message) → void
+        rpc->registerMethod(P2M_DEBUG_PRINT, [uartChannel](RpcArg* arg) -> RpcArg* {
+            char debugPrintBuffer[RPC_ARG_BUF_SIZE];
+            arg->getString(debugPrintBuffer, sizeof(debugPrintBuffer));
+            std::cout << "[UART" << uartChannel << " LOG] " << debugPrintBuffer << std::endl;
+            return nullptr;
         });
 
-        // Server: methods Pico can call on this UART
-        link.pico2MainServer.ping = [ch](int val) -> int {
-            std::cout << "[UART" << ch << "] ping(" << val << ") from Pico" << std::endl;
-            return val;
-        };
-        link.pico2MainServer.debugPrint = [ch](std::string value) {
-            std::cout << "[UART" << ch << " LOG] " << value << std::endl;
-        };
-        link.pico2MainServer.onBoot = [&link](std::string serialString, int deviceModeInt) -> bool {
-            std::string deviceModeString=deviceModeInt==HID_MODE?"HID_MODE":"XINPUT_MODE";
+        // onBoot(string serialString, int32 deviceMode) → bool success
+        rpc->registerMethod(P2M_ON_BOOT, [&link, rpc](RpcArg* arg) -> RpcArg* {
+            char serial[256];
+            arg->getString(serial, sizeof(serial));
+            int32_t deviceModeInt = arg->getInt32();
+            std::string serialString(serial);
+            std::string deviceModeString = (deviceModeInt == HID_MODE) ? "HID_MODE" : "XINPUT_MODE";
 
             std::cout << "[UART" << link.channel << "] Pico booted with Serial: "
-                      << serialString << " in mode "<<deviceModeString<< std::endl;
+                      << serialString << " in mode " << deviceModeString << std::endl;
 
-            // Check if we already have this board by serialString
             for (auto& board : emulationBoards) {
                 if (board.serialString == serialString) {
-                    board.active = true;
-                    board.main2PicoRpcClient = link.main2PicoClient;
+                    board.active      = true;
+                    board.rpc         = rpc;
                     board.uartChannel = link.channel;
                     std::cout << "[UART" << link.channel
                               << "] Reactivated EmulationBoard id=" << board.id << std::endl;
-                    return true;
+                    RpcArg* out = rpc->getRpcArg();
+                    out->putBool(true);
+                    return out;
                 }
             }
 
             // New board — register it
             EmulationBoard board;
-            board.id = nextEmulationBoardId++;
+            board.id           = nextEmulationBoardId++;
             board.serialString = serialString;
-            board.main2PicoRpcClient = link.main2PicoClient;
-            board.uartChannel = link.channel;
-            board.active = true;
+            board.rpc          = rpc;
+            board.uartChannel  = link.channel;
+            board.active       = true;
             emulationBoards.push_back(std::move(board));
             std::cout << "[UART" << link.channel << "] Registered new EmulationBoard id="
                       << (nextEmulationBoardId - 1) << " serial=" << serialString << std::endl;
-            return true;
-        };
 
-        rpc->registerServer(link.pico2MainServer);
-        link.main2PicoClient = rpc->createClient<Main2Pico>();
-        link.rpcManager = rpc;
+            RpcArg* out = rpc->getRpcArg();
+            out->putBool(true);
+            return out;
+        });
 
-        // Tell the Pico to reboot so it announces itself via onBoot
-        std::cout << "UART" << ch << ": sending reboot to Pico..." << std::endl;
-        link.main2PicoClient.reboot();
+        // ── Transport bridges ─────────────────────────────────────────────
+
+        // Outbound: rpcOutCh → frame → UART send
+        coro([rpcOutChannel, framer, uart]() {
+            while (true) {
+                ChannelResult<RpcPacket> res = rpcOutChannel->receive();
+                if (res.error) break;
+                FramedPacket fp = framer->createPacket(
+                    0, reinterpret_cast<const char*>(res.value.data), res.value.size);
+                if (fp.size > 0)
+                    uart->uartSend(reinterpret_cast<const char*>(fp.data), fp.size);
+            }
+        });
+
+        // Inbound: framer.readCh → deframe → rpcInCh
+        coro([rpcInChannel, framer]() {
+            while (true) {
+                auto res = framer->readCh->receive();
+                if (res.error) break;
+                RpcPacket pkt;
+                pkt.size = res.value.getDataSize();
+                memcpy(pkt.data, res.value.getData(), pkt.size);
+                rpcInChannel->send(pkt);
+            }
+        });
     }
 
     std::cout << "RPC system initialized on " << uartLinks.size() << " channel(s)" << std::endl;
@@ -150,26 +187,40 @@ void _main() {
     }
 
     std::vector<std::string> duplicateSerialIds = {};
-    deviceManager=new RealDeviceManager(duplicateSerialIds);
+    deviceManager = new RealDeviceManager(duplicateSerialIds);
 
     axisEventChannel = makeChannel<AxisEvent>(64);
 
-    // 1. UART → RPC coroutines (one per detected channel)
+    // 1. UART → framer coroutines (one per detected channel)
     for (auto& link : uartLinks) {
         coro([&link]() {
             int fd = link.uartManager->getUartFd();
-            char buffer[2048];
             while (true) {
                 auto [flags, err] = wait_file(fd, WAIT_IN);
-                if (err) break;
-                ssize_t n = link.uartManager->uartRead(buffer, sizeof(buffer));
-                if (n > 0)
-                    link.rpcManager->processInput(buffer, n);
+                if (err) {
+                    sleep(200);
+                    continue;
+                }
+                RawChunk chunk;
+                ssize_t n = link.uartManager->uartRead(
+                    reinterpret_cast<char*>(chunk.data), RawChunk::MAX_SIZE);
+                if (n > 0) {
+                    chunk.len = static_cast<uint16_t>(n);
+                    link.framer->writeCh->send(chunk);
+                }
             }
         });
     }
 
-    // 2. Device discovery coroutine — loops every 5 seconds
+    // 2. Tell each Pico to reboot so it announces itself via onBoot
+    for (auto& link : uartLinks) {
+        std::cout << "UART" << link.channel << ": sending reboot to Pico..." << std::endl;
+        RpcArg* arg = link.rpcManager->getRpcArg();
+        link.rpcManager->call(M2P_REBOOT, arg);
+        link.rpcManager->disposeRpcArg(arg);
+    }
+
+    // 3. Device discovery coroutine — loops every 5 seconds
     coro([]() {
         while (true) {
             auto paths = deviceManager->scanDevices();
@@ -178,12 +229,12 @@ void _main() {
                 if (!dev) continue;
                 // Spawn one reading coroutine per device
                 coro([dev]() {
-                    std::cout << "[CONNECT] device=" << dev->deviceIdStr<<std::endl;
+                    std::cout << "[CONNECT] device=" << dev->deviceIdStr << std::endl;
                     while (true) {
                         auto [flags, err] = wait_file(dev->fd, WAIT_IN);
                         if (err || !(flags & WAIT_IN)) {
                             dev->active = false;
-                            std::cout << "[DISCONNECT] device=" << dev->deviceIdStr<<std::endl;
+                            std::cout << "[DISCONNECT] device=" << dev->deviceIdStr << std::endl;
                             break;
                         }
                         if (!deviceManager->processDeviceInput(dev, axisEventChannel)) break;
@@ -194,21 +245,21 @@ void _main() {
         }
     });
 
-    // 3. Axis event processor coroutine
+    // 4. Axis event processor coroutine
     coro([]() {
         while (true) {
             auto [event, err] = axisEventChannel->receive();
             if (err) break;
             // TODO: mapping
             // TODO: pass to virtual device manager
-            std::cout << "[INPUT] device="<< std::setw(2) << event.deviceId
+            std::cout << "[INPUT] device=" << std::setw(2) << event.deviceId
                       << " axis=" << std::setw(5) << event.axisIndex
                       << " value=" << std::setw(4) << event.value << std::endl;
         }
     });
 
-    // 4. HTTP API server
-    startRestApi(8080, deviceManager);
+    // 5. HTTP API server
+    startRestApi(8080, deviceManager, &emulationBoards);
 }
 
 int main() {
@@ -217,8 +268,10 @@ int main() {
 
     // Cleanup
     for (auto& link : uartLinks) {
-        link.rpcManager->deregisterServer<Pico2Main>();
         delete link.rpcManager;
+        delete link.framer;
+        delete link.rpcOutCh;
+        delete link.rpcInCh;
         delete link.uartManager;
     }
 

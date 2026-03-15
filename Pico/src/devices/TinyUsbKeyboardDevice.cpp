@@ -92,8 +92,9 @@ const uint8_t hid_report_descriptor_keyboard[] = {
 
 const uint16_t hid_report_descriptor_keyboard_size = sizeof(hid_report_descriptor_keyboard);
 
-TinyUsbKeyboardDevice::TinyUsbKeyboardDevice()
-    : keyboardLeds(0)
+TinyUsbKeyboardDevice::TinyUsbKeyboardDevice(const std::string& name)
+    : m_name(name)
+    , keyboardLeds(0)
     , bootReportChanged(false)
     , nkroReportChanged(false)
     , consumerReportChanged(false)
@@ -412,7 +413,7 @@ TinyUsbKeyboardBuilder& TinyUsbKeyboardBuilder::name(const std::string& deviceNa
 }
 
 AbstractVirtualDevice* TinyUsbKeyboardBuilder::build() {
-    return new TinyUsbKeyboardDevice();
+    return new TinyUsbKeyboardDevice(m_name);
 }
 
 std::string TinyUsbKeyboardBuilder::getName() const {

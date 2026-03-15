@@ -84,6 +84,84 @@ static void sendAll(int fd, const char* data, int size) {
 }
 
 // ---------------------------------------------------------------------------
+// CoHttpRouter
+// ---------------------------------------------------------------------------
+
+static std::vector<std::string> splitPath(std::string path) {
+    // Normalise: strip trailing slash (except bare "/")
+    if (path.size() > 1 && path.back() == '/')
+        path.pop_back();
+
+    std::vector<std::string> parts;
+    size_t pos = (!path.empty() && path[0] == '/') ? 1 : 0;
+    while (pos < path.size()) {
+        size_t slash = path.find('/', pos);
+        if (slash == std::string::npos) {
+            parts.push_back(path.substr(pos));
+            break;
+        }
+        parts.push_back(path.substr(pos, slash - pos));
+        pos = slash + 1;
+    }
+    return parts;
+}
+
+void CoHttpRouter::endpoint(const std::string& method,
+                            const std::string& path,
+                            RouteHandler handler) {
+    routes_.push_back({ method, splitPath(path), std::move(handler) });
+}
+
+void CoHttpRouter::dispatch(coSession session) const {
+    auto pathSegs = splitPath(session->path);
+
+    const Route* best = nullptr;
+    std::map<std::string, std::string> bestVars;
+    int bestScore = -1;
+
+    for (auto& route : routes_) {
+        if (route.method != session->method) continue;
+        if (route.segments.size() != pathSegs.size()) continue;
+
+        std::map<std::string, std::string> vars;
+        bool match = true;
+        int score = 0;
+
+        for (size_t i = 0; i < route.segments.size(); ++i) {
+            const auto& seg = route.segments[i];
+            if (seg.size() >= 2 && seg.front() == '{' && seg.back() == '}') {
+                vars[seg.substr(1, seg.size() - 2)] = pathSegs[i];
+                // wildcard: score += 0
+            } else if (seg == pathSegs[i]) {
+                ++score;
+            } else {
+                match = false;
+                break;
+            }
+        }
+
+        if (match && score > bestScore) {
+            bestScore  = score;
+            best       = &route;
+            bestVars   = std::move(vars);
+        }
+    }
+
+    if (best) {
+        best->handler(session, std::move(bestVars));
+        return;
+    }
+
+    // No route matched
+    session->setStatus(404);
+    session->setResponseHeader("Content-Type", "application/json");
+    session->setResponseHeader("Access-Control-Allow-Origin", "*");
+    const char* body = "{\"error\":\"not found\"}";
+    session->write(body, static_cast<int>(std::strlen(body)));
+    session->close();
+}
+
+// ---------------------------------------------------------------------------
 // createServer
 // ---------------------------------------------------------------------------
 
