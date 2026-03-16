@@ -124,34 +124,4 @@ private:
     uint8_t calculateHatValue() const;
 };
 
-// ==============================================================================
-// TinyUsbGamepadBuilder - Builder pattern for creating gamepad devices
-// ==============================================================================
-class TinyUsbGamepadBuilder {
-public:
-    TinyUsbGamepadBuilder();
-    
-    // Builder methods
-    TinyUsbGamepadBuilder& name(const std::string& deviceName);
-    TinyUsbGamepadBuilder& gamepadIndex(uint8_t index);
-    TinyUsbGamepadBuilder& buttons(uint8_t count);
-    TinyUsbGamepadBuilder& axes(uint8_t bitmask);  // Use FLAG_MASK_GAMEPAD_AXIS_* flags
-    TinyUsbGamepadBuilder& hat(bool enable = true);
-    
-    // Build the device
-    AbstractVirtualDevice* build();
-    
-    // Get configured properties
-    std::string getName() const;
-    DeviceType getDeviceType() const;
-    uint8_t getAxesCount() const;
-
-private:
-    std::string m_name;
-    uint8_t m_gamepadIndex;
-    uint8_t m_buttonCount;
-    uint8_t m_axesBitMask;
-    bool m_hasHat;
-};
-
 #endif // TINYUSB_GAMEPAD_DEVICE_H

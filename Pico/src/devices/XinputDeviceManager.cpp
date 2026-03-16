@@ -32,7 +32,8 @@ XinputDeviceManager::XinputDeviceManager()
       m_productId(0x028E),          // Xbox 360 Controller PID
       m_manufacturer("Microsoft"),
       m_productName("Xbox 360 Controller"),
-      m_serialNumber("000000") {
+      m_serialNumber("000000"),
+      m_nextSlot(0) {
     // Initialize all sockets as empty
     for (int i = 0; i < MAX_XINPUT_SOCKETS; i++) {
         sockets[i].occupied = false;
@@ -74,38 +75,13 @@ AbstractDeviceManager* XinputDeviceManager::serialNumber(const std::string& seri
     return this;
 }
 
-bool XinputDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) {
-    if (socketIndex >= MAX_XINPUT_SOCKETS) {
+bool XinputDeviceManager::plugGamepad(const std::string& name) {
+    if (m_nextSlot >= MAX_XINPUT_SOCKETS) {
         return false;
     }
-
-    if (sockets[socketIndex].occupied) {
-        return false;
-    }
-
-    if (device == nullptr) {
-        return false;
-    }
-
-    XInputDevice* xinputDevice = static_cast<XInputDevice*>(device);
-    sockets[socketIndex].device = xinputDevice;
-    sockets[socketIndex].occupied = true;
-
-    return true;
-}
-
-bool XinputDeviceManager::unplugDevice(uint8_t socketIndex) {
-    if (socketIndex >= MAX_XINPUT_SOCKETS) {
-        return false;
-    }
-
-    if (!sockets[socketIndex].occupied) {
-        return false;  // Socket already empty
-    }
-
-    cleanupDevice(sockets[socketIndex]);
-    sockets[socketIndex].occupied = false;
-
+    uint8_t idx = m_nextSlot++;
+    sockets[idx].device = new XInputDevice(idx, name);
+    sockets[idx].occupied = true;
     return true;
 }
 

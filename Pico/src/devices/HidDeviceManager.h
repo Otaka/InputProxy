@@ -46,10 +46,16 @@ public:
     const std::string& getProductName() const { return m_productName; }
     const std::string& getSerialNumber() const { return m_serialNumber; }
 
-    // Socket-based device management
-    bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) override;
-    bool unplugDevice(uint8_t socketIndex) override;
-    
+    // Device registration (call before prepareDescriptors())
+    bool plugKeyboard(const std::string& name = "Keyboard");
+    bool plugMouse(const std::string& name = "Mouse");
+    bool plugGamepad(const std::string& name, uint8_t buttons = 16,
+                     uint8_t axesMask = FLAG_MASK_GAMEPAD_AXIS_LX | FLAG_MASK_GAMEPAD_AXIS_LY,
+                     bool hat = true);
+
+    // Call once after all plug* calls, before USB init
+    void prepareDescriptors();
+
     // Check if a socket is occupied
     bool isSocketOccupied(uint8_t socketIndex) const;
     
@@ -93,6 +99,8 @@ public:
 
 private:
     UsbDevice deviceSockets[MAX_DEVICE_SOCKETS];  // Fixed-size array of device sockets
+    uint8_t m_nextSlot;          // Next available socket slot
+    uint8_t m_nextGamepadIndex;  // Next auto-assigned gamepad index
 
     // USB device-level properties (apply to entire composite device)
     uint16_t m_vendorId;
@@ -109,7 +117,10 @@ private:
 
     // Helper to allocate interface and endpoint numbers based on socket index
     void allocateInterface(UsbDevice& info, uint8_t socketIndex);
-    
+
+    // Internal: place a device in the next slot
+    bool plugDeviceInternal(AbstractVirtualDevice* device);
+
     // Cleanup a device
     void cleanupDevice(UsbDevice& info);
 };

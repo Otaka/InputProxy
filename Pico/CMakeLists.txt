@@ -44,6 +44,7 @@ add_executable(InputProxy
     src/PersistentStorage.cpp
     src/usb_descriptors.cpp
     ../shared/shared.cpp
+    ../shared/PicoConfig.cpp
     ../shared/corocgo/corocgo.cpp
     ../shared/corocgo/corocrpc/corocrpc.cpp
     src/devices/AbstractVirtualDevice.cpp

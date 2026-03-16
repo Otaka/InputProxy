@@ -240,28 +240,3 @@ AxesDescription TinyUsbMouseDevice::axesDescription() {
     return desc;
 }
 
-// ==============================================================================
-// TinyUsbMouseBuilder - Builder pattern for creating mouse devices
-// ==============================================================================
-
-TinyUsbMouseBuilder::TinyUsbMouseBuilder()
-    : m_name("Mouse")
-{
-}
-
-TinyUsbMouseBuilder& TinyUsbMouseBuilder::name(const std::string& deviceName) {
-    m_name = deviceName;
-    return *this;
-}
-
-AbstractVirtualDevice* TinyUsbMouseBuilder::build() {
-    return new TinyUsbMouseDevice(m_name);
-}
-
-std::string TinyUsbMouseBuilder::getName() const {
-    return m_name;
-}
-
-DeviceType TinyUsbMouseBuilder::getDeviceType() const {
-    return DeviceType::MOUSE;
-}

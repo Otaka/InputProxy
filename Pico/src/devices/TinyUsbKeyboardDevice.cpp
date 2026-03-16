@@ -398,28 +398,3 @@ AxesDescription TinyUsbKeyboardDevice::axesDescription() {
     return desc;
 }
 
-// ==============================================================================
-// TinyUsbKeyboardBuilder - Builder pattern for creating keyboard devices
-// ==============================================================================
-
-TinyUsbKeyboardBuilder::TinyUsbKeyboardBuilder()
-    : m_name("Keyboard")
-{
-}
-
-TinyUsbKeyboardBuilder& TinyUsbKeyboardBuilder::name(const std::string& deviceName) {
-    m_name = deviceName;
-    return *this;
-}
-
-AbstractVirtualDevice* TinyUsbKeyboardBuilder::build() {
-    return new TinyUsbKeyboardDevice(m_name);
-}
-
-std::string TinyUsbKeyboardBuilder::getName() const {
-    return m_name;
-}
-
-DeviceType TinyUsbKeyboardBuilder::getDeviceType() const {
-    return DeviceType::KEYBOARD;
-}

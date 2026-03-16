@@ -5,11 +5,15 @@
 #include "CoHttpServer.h"
 #include "RestApi.h"
 #include "../shared/shared.h"
+#include "../shared/PicoConfig.h"
+#include "../shared/crc32.h"
 #include "corocrpc/corocrpc.h"
 #include "rpcinterface.h"
 #include "UartManager.h"
 #include "RealDeviceManager.h"
 #include "EmulationBoard.h"
+#include "EmulatedDeviceManager.h"
+#include "MainboardConfig.h"
 
 using namespace corocrpc;
 using namespace corocgo;
@@ -33,6 +37,9 @@ int nextEmulationBoardId = 1;
 // Channel for axis events from real devices
 Channel<AxisEvent>* axisEventChannel;
 RealDeviceManager* deviceManager;
+
+EmulatedDeviceManager* emulatedDeviceManager = nullptr;
+std::vector<BoardEntry> boardConfigs;          // loaded from config.json at startup
 
 
 // ---------------------------------------------------------------------------
@@ -105,43 +112,83 @@ bool initRpcSystem() {
             return nullptr;
         });
 
-        // onBoot(string serialString, int32 deviceMode) → bool success
+        // onBoot(string picoId, uint32 configCrc32) → bool success
         rpc->registerMethod(P2M_ON_BOOT, [&link, rpc](RpcArg* arg) -> RpcArg* {
-            char serial[256];
-            arg->getString(serial, sizeof(serial));
-            int32_t deviceModeInt = arg->getInt32();
-            std::string serialString(serial);
-            std::string deviceModeString = (deviceModeInt == HID_MODE) ? "HID_MODE" : "XINPUT_MODE";
+            if (!emulatedDeviceManager) {
+                std::cerr << "[UART" << link.channel << "] onBoot called before EmulatedDeviceManager init\n";
+                RpcArg* out = rpc->getRpcArg(); out->putBool(false); return out;
+            }
+            char picoIdBuf[64] = {};
+            arg->getString(picoIdBuf, sizeof(picoIdBuf));
+            // corocrpc encodes all integers as int32. Read as int32, then reinterpret bits
+            // as uint32. Values with high bit set arrive as negative int32 but recover
+            // correctly: e.g. 0xFFFFFFFF → -1 → (uint32_t)-1 == 0xFFFFFFFF.
+            uint32_t receivedCrc = static_cast<uint32_t>(arg->getInt32());
+            std::string picoId(picoIdBuf);
 
-            std::cout << "[UART" << link.channel << "] Pico booted with Serial: "
-                      << serialString << " in mode " << deviceModeString << std::endl;
+            std::cout << "[UART" << link.channel << "] onBoot picoId=" << picoId
+                      << " crc=0x" << std::hex << receivedCrc << std::dec << std::endl;
 
-            for (auto& board : emulationBoards) {
-                if (board.serialString == serialString) {
-                    board.active      = true;
-                    board.rpc         = rpc;
-                    board.uartChannel = link.channel;
-                    std::cout << "[UART" << link.channel
-                              << "] Reactivated EmulationBoard id=" << board.id << std::endl;
-                    RpcArg* out = rpc->getRpcArg();
-                    out->putBool(true);
-                    return out;
-                }
+            // Find this board in loaded configs
+            const BoardEntry* entry = nullptr;
+            for (const auto& e : boardConfigs)
+                if (e.picoId == picoId) { entry = &e; break; }
+
+            if (!entry) {
+                std::cerr << "[UART" << link.channel << "] WARNING: unknown picoId=" << picoId
+                          << " — add to emulation_boards in config.json" << std::endl;
+                RpcArg* out = rpc->getRpcArg();
+                out->putBool(false);
+                return out;
             }
 
-            // New board — register it
-            EmulationBoard board;
-            board.id           = nextEmulationBoardId++;
-            board.serialString = serialString;
-            board.rpc          = rpc;
-            board.uartChannel  = link.channel;
-            board.active       = true;
-            emulationBoards.push_back(std::move(board));
-            std::cout << "[UART" << link.channel << "] Registered new EmulationBoard id="
-                      << (nextEmulationBoardId - 1) << " serial=" << serialString << std::endl;
+            // Compute CRC of our canonical config
+            std::string canonical = serializePicoConfig(entry->config);
+            uint32_t expectedCrc  = crc32(canonical.c_str(), canonical.size());
 
+            // Find or create EmulationBoard
+            EmulationBoard* board = nullptr;
+            for (auto& b : emulationBoards)
+                if (b.serialString == picoId) { board = &b; break; }
+            if (!board) {
+                EmulationBoard newBoard;
+                newBoard.id           = nextEmulationBoardId++;
+                newBoard.serialString = picoId;
+                newBoard.rpc          = rpc;
+                newBoard.uartChannel  = link.channel;
+                newBoard.active       = false;
+                newBoard.picoConfig   = entry->config;
+                emulationBoards.push_back(std::move(newBoard));
+                board = &emulationBoards.back();
+            } else {
+                board->rpc         = rpc;
+                board->uartChannel = link.channel;
+                board->picoConfig  = entry->config;
+            }
+
+            if (receivedCrc == expectedCrc) {
+                board->active = true;
+                auto vdevices = buildVirtualDevices(*entry);
+                emulatedDeviceManager->registerBoard(board, vdevices);
+                std::cout << "[UART" << link.channel << "] picoId=" << picoId
+                          << " config match — board active" << std::endl;
+                RpcArg* out = rpc->getRpcArg();
+                out->putBool(true);
+                return out;
+            }
+
+            // CRC mismatch — push config
+            std::cout << "[UART" << link.channel << "] picoId=" << picoId
+                      << " CRC mismatch (got 0x" << std::hex << receivedCrc
+                      << " expected 0x" << expectedCrc << std::dec
+                      << ") — sending setConfiguration" << std::endl;
+            std::string errMsg;
+            bool ok = board->setConfiguration(canonical, errMsg);
+            if (!ok) {
+                std::cerr << "[UART" << link.channel << "] setConfiguration rejected: " << errMsg << std::endl;
+            }
             RpcArg* out = rpc->getRpcArg();
-            out->putBool(true);
+            out->putBool(false);
             return out;
         });
 
@@ -180,6 +227,13 @@ bool initRpcSystem() {
 
 void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
+
+    boardConfigs = loadMainboardConfig("config.json");
+    std::cout << "Loaded " << boardConfigs.size() << " emulation board config(s)" << std::endl;
+    emulatedDeviceManager = new EmulatedDeviceManager();
+    // Reserve capacity so push_back never reallocates — EmulationBoard* pointers stored
+    // in VirtualOutputDevice::board must remain stable for the process lifetime.
+    emulationBoards.reserve(16);
 
     if (!initRpcSystem()) {
         std::cerr << "Failed to initialize RPC system" << std::endl;
@@ -259,7 +313,7 @@ void _main() {
     });
 
     // 5. HTTP API server
-    startRestApi(8080, deviceManager, &emulationBoards);
+    startRestApi(8080, deviceManager, &emulationBoards, emulatedDeviceManager);
 }
 
 int main() {

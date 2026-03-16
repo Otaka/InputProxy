@@ -1,5 +1,7 @@
 #include "RestApi.h"
 #include "CoHttpServer.h"
+#include "EmulatedDeviceManager.h"
+#include "PicoConfig.h"
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -65,9 +67,20 @@ static bool parseId(const std::map<std::string, std::string>& vars,
 
 // ---------------------------------------------------------------------------
 
+static std::string picoDeviceTypeStr(PicoDeviceType t) {
+    switch (t) {
+        case PicoDeviceType::KEYBOARD:       return "keyboard";
+        case PicoDeviceType::MOUSE:          return "mouse";
+        case PicoDeviceType::HID_GAMEPAD:    return "hid_gamepad";
+        case PicoDeviceType::XBOX360_GAMEPAD:return "xbox360_gamepad";
+        default:                             return "unknown";
+    }
+}
+
 void startRestApi(int port, RealDeviceManager* deviceManager,
-                  std::vector<EmulationBoard>* boards) {
-    coro([port, deviceManager, boards]() {
+                  std::vector<EmulationBoard>* boards,
+                  EmulatedDeviceManager* emulatedDeviceManager) {
+    coro([port, deviceManager, boards, emulatedDeviceManager]() {
         auto router = std::make_shared<CoHttpRouter>();
 
         // ---- /emulationboard/* ----
@@ -95,6 +108,39 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                 EmulationBoard* b = findBoard(boards, id);
                 if (!b) { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
                 sendJson(session, 200, boardJson(*b));
+            });
+
+        router->endpoint("GET", "/emulationboard/{id}/devices",
+            [boards, emulatedDeviceManager](coSession session, auto vars) {
+                int32_t id;
+                if (!parseId(vars, "id", id)) {
+                    sendJson(session, 400, "{\"error\":\"invalid id\"}"); return;
+                }
+                EmulationBoard* b = findBoard(boards, id);
+                if (!b) { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
+                std::ostringstream json;
+                json << "[";
+                bool first = true;
+                for (auto& d : emulatedDeviceManager->getDevices()) {
+                    if (d.board != b) continue;
+                    if (!first) json << ",";
+                    first = false;
+                    json << "{"
+                         << "\"id\":\""     << jsonEscape(d.id)          << "\","
+                         << "\"slotIndex\":"<< d.slotIndex               << ","
+                         << "\"type\":\""   << picoDeviceTypeStr(d.type) << "\","
+                         << "\"axes\":[";
+                    bool firstAxis = true;
+                    for (auto& a : d.axisTable.getEntries()) {
+                        if (!firstAxis) json << ",";
+                        firstAxis = false;
+                        json << "{\"name\":\"" << jsonEscape(a.name) << "\","
+                             << "\"index\":"   << a.index            << "}";
+                    }
+                    json << "]}";
+                }
+                json << "]";
+                sendJson(session, 200, json.str());
             });
 
         router->endpoint("POST", "/emulationboard/{id}/reboot",
@@ -157,77 +203,6 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                 if (!b->active) { sendJson(session, 503, "{\"error\":\"board not active\"}"); return; }
                 bool state = b->getLedStatus();
                 sendJson(session, 200, state ? "{\"value\":true}" : "{\"value\":false}");
-            });
-
-        router->endpoint("GET", "/emulationboard/{id}/mode",
-            [boards](coSession session, auto vars) {
-                int32_t id;
-                if (!parseId(vars, "id", id)) {
-                    sendJson(session, 400, "{\"error\":\"invalid id\"}"); return;
-                }
-                EmulationBoard* b = findBoard(boards, id);
-                if (!b)         { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
-                if (!b->active) { sendJson(session, 503, "{\"error\":\"board not active\"}"); return; }
-                int32_t mode = b->getMode();
-                std::ostringstream json;
-                json << "{\"mode\":\"" << (mode == XINPUT_MODE ? "xinput" : "hid") << "\"}";
-                sendJson(session, 200, json.str());
-            });
-
-        router->endpoint("POST", "/emulationboard/{id}/mode",
-            [boards](coSession session, auto vars) {
-                int32_t id;
-                if (!parseId(vars, "id", id)) {
-                    sendJson(session, 400, "{\"error\":\"invalid id\"}"); return;
-                }
-                EmulationBoard* b = findBoard(boards, id);
-                if (!b)         { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
-                if (!b->active) { sendJson(session, 503, "{\"error\":\"board not active\"}"); return; }
-                std::string value = qparam(session, "value");
-                if (value != "hid" && value != "xinput") {
-                    sendJson(session, 400, "{\"error\":\"value must be 'hid' or 'xinput'\"}");
-                    return;
-                }
-                b->setMode(value == "xinput" ? XINPUT_MODE : HID_MODE);
-                sendJson(session, 200, "{\"ok\":true}");
-            });
-
-        router->endpoint("POST", "/emulationboard/{id}/plugdevice",
-            [boards](coSession session, auto vars) {
-                int32_t id;
-                if (!parseId(vars, "id", id)) {
-                    sendJson(session, 400, "{\"error\":\"invalid id\"}"); return;
-                }
-                EmulationBoard* b = findBoard(boards, id);
-                if (!b)         { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
-                if (!b->active) { sendJson(session, 503, "{\"error\":\"board not active\"}"); return; }
-                int32_t slot = 0, type = 0, hat = 0, axes = 0, buttons = 0;
-                try {
-                    slot    = std::stoi(qparam(session, "slot",    "0"));
-                    type    = std::stoi(qparam(session, "type",    "0"));
-                    hat     = std::stoi(qparam(session, "hat",     "0"));
-                    axes    = std::stoi(qparam(session, "axes",    "0"));
-                    buttons = std::stoi(qparam(session, "buttons", "0"));
-                } catch (...) {
-                    sendJson(session, 400, "{\"error\":\"invalid params\"}"); return;
-                }
-                bool ok = b->plugDevice(slot, type, hat, axes, buttons);
-                sendJson(session, 200, ok ? "{\"ok\":true}" : "{\"ok\":false}");
-            });
-
-        router->endpoint("POST", "/emulationboard/{id}/unplugdevice",
-            [boards](coSession session, auto vars) {
-                int32_t id, slot;
-                if (!parseId(vars, "id", id)) {
-                    sendJson(session, 400, "{\"error\":\"invalid id\"}"); return;
-                }
-                EmulationBoard* b = findBoard(boards, id);
-                if (!b)         { sendJson(session, 404, "{\"error\":\"board not found\"}"); return; }
-                if (!b->active) { sendJson(session, 503, "{\"error\":\"board not active\"}"); return; }
-                try { slot = std::stoi(qparam(session, "slot", "0")); }
-                catch (...) { sendJson(session, 400, "{\"error\":\"invalid slot\"}"); return; }
-                bool ok = b->unplugDevice(slot);
-                sendJson(session, 200, ok ? "{\"ok\":true}" : "{\"ok\":false}");
             });
 
         router->endpoint("POST", "/emulationboard/{id}/setaxis",

@@ -1,56 +1,33 @@
 {
-    "emulation_host":[
+    "emulation_boards": [
         {
             "id": "7I2GP",
-            "mode": "HID_MODE"
-        }
-    ],
-    "emulated_devices":[
-        {
-            "id": "vrt_gamepad1",
-            "name": "Virtual Hid Gamepad",
-            "type": "hid_gamepad",
-            "host": "7I2GP",
-            "config":{
-                "buttons": 12,
-                "hat": true,
-                "axes": ["AXIS_LX", "AXIS_LY", "AXIS_LZ", "AXIS_RX", "AXIS_RY", "AXIS_RZ", "AXIS_DIAL", "AXIS_SLIDER"]
-            }
-        }
-    ],
-    "logical_devices":[
-        
-        {
-            "id":"inp_gamepad1",
-            "name":"Gamepad input 1"
-        }
-    ],
-    "real_devices":[
-        {
-            "id":"usb_gmpd_1",
-            "deviceId":"{vendor}/{product}/{serial}/{capabilities}",
-            "deviceType":"gamepad"
-        }
-    ],
-    "real_to_logical_mapping":[
-        {
-        "real":"usb_gmpd_1",
-        "logical":"inp_gamepad1"
-        }
-    ],
-    "profiles":[
-        {
-            "name":"default",
-            "enabled":true
-        }
-    ],
-    "mapping":[
-        {
-            "profile":"default",
-            "type":"simple_mapping",
-            "pairs":[
-                "inp_gamepad1:BUTTON_1|vrt_gamepad1:BUTTON_1"
+            "vid": "0x120A",
+            "pid": "0x0004",
+            "manufacturer": "InputProxy",
+            "product": "InputProxy Composite",
+            "serial": "20260101",
+            "devices": [
+                { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
+                { "id": "vmouse", "type": "mouse",      "name": "InputProxy Mouse" },
+                { "id": "vgp1",   "type": "hidgamepad", "name": "InputProxy Gamepad 1",
+                  "buttons": 16, "axesmask": 3, "hat": true },
+                { "id": "vgp2",   "type": "hidgamepad", "name": "InputProxy Gamepad 2",
+                  "buttons": 17, "axesmask": 3, "hat": true },
+                { "id": "vgp3",   "type": "hidgamepad", "name": "InputProxy Gamepad 3",
+                  "buttons": 18, "axesmask": 3, "hat": true },
+                { "id": "vgp4",   "type": "hidgamepad", "name": "InputProxy Gamepad 4",
+                  "buttons": 19, "axesmask": 3, "hat": true }
             ]
         }
-    ]
+    ],
+    "emulation_host": [
+        { "id": "7I2GP", "mode": "HID_MODE" }
+    ],
+    "emulated_devices": [],
+    "logical_devices": [],
+    "real_devices": [],
+    "real_to_logical_mapping": [],
+    "profiles": [{ "name": "default", "enabled": true }],
+    "mapping": []
 }

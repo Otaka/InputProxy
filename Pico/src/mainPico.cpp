@@ -16,15 +16,13 @@
 #include "../shared/Corocgo/corocrpc/corocrpc.h"
 #include "../shared/rpcinterface.h"
 #include "../shared/shared.h"
+#include "../shared/PicoConfig.h"
+#include "../shared/crc32.h"
 #include "UartManagerPico.h"
 #include "PersistentStorage.h"
 #include "devices/AbstractDeviceManager.h"
 #include "devices/HidDeviceManager.h"
 #include "devices/XinputDeviceManager.h"
-#include "devices/TinyUsbKeyboardDevice.h"
-#include "devices/TinyUsbMouseDevice.h"
-#include "devices/TinyUsbGamepadDevice.h"
-#include "devices/XInputDevice.h"
 
 using namespace corocrpc;
 using namespace corocgo;
@@ -90,42 +88,6 @@ void reboot() {
 }
 
 // ---------------------------------------------------------------------------
-// plugDevice helper (same logic as before, extracted for clarity)
-// ---------------------------------------------------------------------------
-
-static bool doPlugDevice(int slotIndex, const DeviceConfiguration& dc) {
-    if (!deviceManager) return false;
-
-    DeviceMode currentMode = deviceManager->getMode();
-
-    if (currentMode == DeviceMode::HID_MODE) {
-        if (dc.deviceType == 0) {  // Keyboard
-            return deviceManager->plugDevice(slotIndex,
-                TinyUsbKeyboardBuilder().name("InputProxy Keyboard").build());
-        } else if (dc.deviceType == 1) {  // Mouse
-            return deviceManager->plugDevice(slotIndex,
-                TinyUsbMouseBuilder().name("InputProxy Mouse").build());
-        } else if (dc.deviceType == 2) {  // HID Gamepad
-            std::string name = "InputProxy Gamepad " + std::to_string(slotIndex);
-            TinyUsbGamepadBuilder gb;
-            gb.gamepadIndex(slotIndex)
-              .name(name)
-              .axes(dc.config.hidGamepadConfig.axesMask)
-              .buttons(dc.config.hidGamepadConfig.buttons)
-              .hat(dc.config.hidGamepadConfig.hat != 0);
-            return deviceManager->plugDevice(slotIndex, gb.build());
-        }
-    } else if (currentMode == DeviceMode::XINPUT_MODE) {
-        if (dc.deviceType == 3) {  // Xbox360 Gamepad
-            std::string name = "Xbox 360 Controller " + std::to_string(slotIndex + 1);
-            return deviceManager->plugDevice(slotIndex, new XInputDevice(slotIndex, name));
-        }
-    }
-
-    return false;
-}
-
-// ---------------------------------------------------------------------------
 // RPC setup
 // ---------------------------------------------------------------------------
 
@@ -141,7 +103,6 @@ void initUartRpcSystem() {
 
     // ping(int32 val) → int32 val
     rpc->registerMethod(M2P_PING, [rpc](RpcArg* arg) -> RpcArg* {
-       // toggleDefaultLed();
         int32_t val = arg->getInt32();
         RpcArg* out = rpc->getRpcArg();
         out->putInt32(val+1);
@@ -172,9 +133,8 @@ void initUartRpcSystem() {
     // reboot() → void (Pico reboots; no reply sent)
     rpc->registerMethod(M2P_REBOOT, [](RpcArg* arg) -> RpcArg* {
         toggleDefaultLed();
-        const char*rebootMethodMessage="Received reboot request";
+        const char* rebootMethodMessage = "Received reboot request";
         logChannel->send(rebootMethodMessage);
-
         sleep(1000);
         rebootChannel->send(false);
         return nullptr;
@@ -192,52 +152,37 @@ void initUartRpcSystem() {
         return nullptr;
     });
 
-    // setMode(int32 mode) → void  (saves to flash, reboots)
-    rpc->registerMethod(M2P_SET_MODE, [](RpcArg* arg) -> RpcArg* {
-        DeviceMode newMode = static_cast<DeviceMode>(arg->getInt32());
-        if (deviceManager && deviceManager->getMode() == newMode) return nullptr;
-        persistentStorage.put("mode", newMode == DeviceMode::XINPUT_MODE ? "XINPUT" : "HID");
-        persistentStorage.flush();
-        rebootChannel->send(false);
-        return nullptr;
-    });
+    // setConfiguration(string configJson) → bool ok, string errorMsg
+    rpc->registerMethod(M2P_SET_CONFIGURATION, [rpc](RpcArg* arg) -> RpcArg* {
+        char jsonBuf[960] = {}; // 900 byte limit + headroom
+        arg->getString(jsonBuf, sizeof(jsonBuf));
+        int jsonLen = (int)strlen(jsonBuf);
 
-    // getMode() → int32 mode
-    rpc->registerMethod(M2P_GET_MODE, [rpc](RpcArg* arg) -> RpcArg* {
-        RpcArg* out = rpc->getRpcArg();
-        out->putInt32(deviceManager ? static_cast<int32_t>(deviceManager->getMode()) : -1);
-        return out;
-    });
-
-    // plugDevice(int32 slotIndex, int32 deviceType, int32 hat, int32 axesMask, int32 buttons) → bool
-    rpc->registerMethod(M2P_PLUG_DEVICE, [rpc](RpcArg* arg) -> RpcArg* {
-        int32_t slotIndex  = arg->getInt32();
-        int32_t deviceType = arg->getInt32();
-        int32_t hat        = arg->getInt32();
-        int32_t axesMask   = arg->getInt32();
-        int32_t buttons    = arg->getInt32();
-
-        DeviceConfiguration dc;
-        dc.deviceType = deviceType;
-        dc.config.hidGamepadConfig.hat      = static_cast<uint8_t>(hat);
-        dc.config.hidGamepadConfig.axesMask = static_cast<uint16_t>(axesMask);
-        dc.config.hidGamepadConfig.buttons  = static_cast<uint8_t>(buttons);
-
-        bool ok = doPlugDevice(static_cast<int>(slotIndex), dc);
-        RpcArg* out = rpc->getRpcArg();
-        out->putBool(ok);
-        return out;
-    });
-
-    // unplugDevice(int32 slotIndex) → bool
-    rpc->registerMethod(M2P_UNPLUG_DEVICE, [rpc](RpcArg* arg) -> RpcArg* {
-        int32_t slotIndex = arg->getInt32();
-        bool ok = false;
-        if (deviceManager) {
-            ok = deviceManager->unplugDevice(slotIndex);
+        if (jsonLen <= 0 || jsonLen > 900) {
+            RpcArg* out = rpc->getRpcArg();
+            out->putBool(false);
+            out->putString("config too large or empty");
+            return out;
         }
+
+        PicoConfig cfg;
+        std::string err;
+        if (!parsePicoConfig(jsonBuf, jsonLen, cfg, err)) {
+            RpcArg* out = rpc->getRpcArg();
+            out->putBool(false);
+            out->putString(err.c_str());
+            return out;
+        }
+
+        persistentStorage.put("config", std::string(jsonBuf, jsonLen));
+        persistentStorage.flush();
+
+        // Send success reply before rebooting
         RpcArg* out = rpc->getRpcArg();
-        out->putBool(ok);
+        out->putBool(true);
+        out->putString("");
+        // Reboot via channel
+        rebootChannel->send(false);
         return out;
     });
 
@@ -272,12 +217,12 @@ void initUartRpcSystem() {
 // RPC call wrappers (Pico → Main)
 // ---------------------------------------------------------------------------
 
-// Announces this Pico to Main. Returns true when Main acknowledges.
+// Announces this Pico to Main with its configCrc32. Returns true when Main acknowledges.
 // Must be called from a coroutine (blocks until RPC_OK or timeout).
-static bool rpcOnBoot(const std::string& deviceId, DeviceMode bootMode) {
+static bool rpcOnBoot(const std::string& deviceId, uint32_t configCrc32) {
     RpcArg* arg = rpcManager->getRpcArg();
     arg->putString(deviceId.c_str());
-    arg->putInt32(static_cast<int32_t>(bootMode));
+    arg->putInt32(static_cast<int32_t>(configCrc32)); // uint32 sent as int32 bit-pattern
     RpcResult res = rpcManager->call(P2M_ON_BOOT, arg);
     rpcManager->disposeRpcArg(arg);
     bool accepted = (res.error == RPC_OK && res.arg && res.arg->getBool());
@@ -302,8 +247,6 @@ int _main() {
     logChannel    = makeChannel<std::string>(10);
 
     initPicoLed();
-    tusb_init();
-    tud_task();
 
     persistentStorage.load();
 
@@ -315,94 +258,73 @@ int _main() {
         persistentStorage.flush();
     }
 
-    // Initialize device manager from saved mode (default HID)
-    std::string savedMode = persistentStorage.get("mode");
-    DeviceMode bootMode = (savedMode == "XINPUT") ? DeviceMode::XINPUT_MODE : DeviceMode::HID_MODE;
-    if (bootMode == DeviceMode::XINPUT_MODE) {
+    // -- Config-driven initialization --
+    std::string configJson  = persistentStorage.get("config");
+    PicoConfig  picoConfig;
+    uint32_t    configCrc32 = 0;
+    std::string parseError;
+
+    if (configJson.empty() || !parsePicoConfig(configJson.c_str(), (int)configJson.size(), picoConfig, parseError)) {
+        if (!configJson.empty()) {
+            // Corrupt stored config — clear it
+            logChannel->send("Config parse failed: " + parseError + " — using fallback");
+            persistentStorage.remove("config");
+            persistentStorage.flush();
+        }
+        // Fallback: HID mode, one keyboard
+        picoConfig = PicoConfig();
+        picoConfig.mode = HID_MODE;
+        PicoDeviceConfig kbd;
+        kbd.type = PicoDeviceType::KEYBOARD;
+        kbd.name = "Keyboard";
+        picoConfig.devices.push_back(kbd);
+        configCrc32 = 0;  // defined constant — NOT crc32("", 0)
+    } else {
+        configCrc32 = crc32(configJson.c_str(), configJson.size());
+    }
+
+    // Build device manager from PicoConfig
+    if (picoConfig.mode == XINPUT_MODE) {
         XinputDeviceManager* xm = new XinputDeviceManager();
-        xm->vendorId(0x045E)->productId(0x028E)
-          ->manufacturer("Microsoft")
-          ->productName("Xbox 360 Controller")
-          ->serialNumber("000000");
+        xm->vendorId(picoConfig.vid)
+          ->productId(picoConfig.pid)
+          ->manufacturer(picoConfig.manufacturer)
+          ->productName(picoConfig.product)
+          ->serialNumber(picoConfig.serial);
+        for (const auto& d : picoConfig.devices) {
+            if (d.type == PicoDeviceType::XBOX360_GAMEPAD)
+                xm->plugGamepad(d.name.empty() ? std::string("Xbox 360 Controller") : d.name);
+        }
         deviceManager = xm;
     } else {
         HidDeviceManager* hm = new HidDeviceManager();
-        hm->vendorId(0x1209)->productId(0x0003)
-          ->manufacturer("InputProxy")
-          ->productName("InputProxy Composite Device")
-          ->serialNumber("20260118");
-        deviceManager = hm;
-        deviceManager->plugDevice(0, TinyUsbKeyboardBuilder().name("InputProxy Keyboard").build());
-        deviceManager->plugDevice(1, TinyUsbMouseBuilder().name("InputProxy Mouse").build());
-        deviceManager->plugDevice(2, TinyUsbGamepadBuilder().name("InputProxy Gamepad").axes(FLAG_MASK_GAMEPAD_AXIS_LX|FLAG_MASK_GAMEPAD_AXIS_LY).buttons(32).hat(true).build());
-        deviceManager->plugDevice(3, TinyUsbGamepadBuilder().name("InputProxy Gamepad 2").axes(FLAG_MASK_GAMEPAD_AXIS_LX|FLAG_MASK_GAMEPAD_AXIS_LY|FLAG_MASK_GAMEPAD_AXIS_LZ).buttons(8).hat(false).build());
-    }
-    setDeviceManager(deviceManager);
-    //keyboard test
-    coro([](){
-        int keyboardDeviceIndex=0;
-        while(true) {
-            deviceManager->setAxis(keyboardDeviceIndex,KEY_NUM_LOCK,1000);
-            sleep(1000);
-            deviceManager->setAxis(keyboardDeviceIndex,KEY_NUM_LOCK,0);
-            sleep(1000);
-        }
-    });
-    
-    //mouse test
-    coro([](){
-        int mouseDeviceIndex=1;
-        for(int i=0;i<20;i++){
-            deviceManager->setAxis(mouseDeviceIndex,MOUSE_AXIS_X_MINUS,1);
-            sleep(20);
-        }
-        sleep(1000);
-
-        for(int i=0;i<20;i++){
-            deviceManager->setAxis(mouseDeviceIndex,MOUSE_AXIS_X_PLUS,1);
-            sleep(20);
-        }
-        sleep(1000);
-    });
-    
-    
-    //gamepad test
-    coro([](){
-        int gamepadDeviceIndex=2;
-        while(true) {
-            for(int i=0;i<2;i++){
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_1,1000);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_1,0);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_2,1000);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_BTN_2,0);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LX_MINUS,1000);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LX_MINUS,0);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LY_MINUS,1000);
-                sleep(200);
-                deviceManager->setAxis(gamepadDeviceIndex+i,GAMEPAD_AXIS_LY_MINUS,0);
-                sleep(200);
+        hm->vendorId(picoConfig.vid)
+          ->productId(picoConfig.pid)
+          ->manufacturer(picoConfig.manufacturer)
+          ->productName(picoConfig.product)
+          ->serialNumber(picoConfig.serial);
+        for (const auto& d : picoConfig.devices) {
+            switch (d.type) {
+                case PicoDeviceType::KEYBOARD:
+                    hm->plugKeyboard(d.name.empty() ? std::string("Keyboard") : d.name);
+                    break;
+                case PicoDeviceType::MOUSE:
+                    hm->plugMouse(d.name.empty() ? std::string("Mouse") : d.name);
+                    break;
+                case PicoDeviceType::HID_GAMEPAD:
+                    hm->plugGamepad(d.name.empty() ? std::string("Gamepad") : d.name,
+                                    d.buttons, d.axesMask, d.hat);
+                    break;
+                default: break;
             }
         }
-    });
-    
+        hm->prepareDescriptors();
+        deviceManager = hm;
+    }
+    setDeviceManager(deviceManager);
 
-    /*TinyUsbGamepadBuilder gb;
-    gb.gamepadIndex(1).name("InputProxy Gamepad 0").axes(2).buttons(8).hat(true);
-    deviceManager->plugDevice(1, gb.build());
-    coro([](){
-        while(true){
-            deviceManager->setAxis(1,10,1000);
-            sleep(500);
-            deviceManager->setAxis(1,10,0);
-            sleep(500);
-        }
-    });*/
+    tusb_init();
+    tud_task();
 
     deviceManager->init();
     uartManager = new UartManagerPico();
@@ -430,7 +352,7 @@ int _main() {
         }
     });
 
-    rpcOnBoot(deviceId, bootMode);
+    rpcOnBoot(deviceId, configCrc32);
     // Log coroutine — drains logChannel and sends debugPrint to Main
     coro([]() {
         while (true) {
@@ -456,7 +378,6 @@ int _main() {
         char buffer[256];
         while (true) {
             sleep(1000);
-            //toggleDefaultLed();
             sprintf(buffer, "Hello world %d", index++);
             logChannel->send(buffer);
         }

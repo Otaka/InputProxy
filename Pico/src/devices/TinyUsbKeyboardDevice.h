@@ -100,25 +100,4 @@ private:
 extern const uint8_t hid_report_descriptor_keyboard[];
 extern const uint16_t hid_report_descriptor_keyboard_size;
 
-// ==============================================================================
-// TinyUsbKeyboardBuilder - Builder pattern for creating keyboard devices
-// ==============================================================================
-class TinyUsbKeyboardBuilder {
-public:
-    TinyUsbKeyboardBuilder();
-    
-    // Builder methods
-    TinyUsbKeyboardBuilder& name(const std::string& deviceName);
-    
-    // Build the device
-    AbstractVirtualDevice* build();
-    
-    // Get configured properties
-    std::string getName() const;
-    DeviceType getDeviceType() const;
-
-private:
-    std::string m_name;
-};
-
 #endif // TINYUSB_KEYBOARD_DEVICE_H

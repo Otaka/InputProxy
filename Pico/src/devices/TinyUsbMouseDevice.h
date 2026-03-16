@@ -73,25 +73,4 @@ private:
 extern const uint8_t hid_report_descriptor_mouse[];
 extern const uint16_t hid_report_descriptor_mouse_size;
 
-// ==============================================================================
-// TinyUsbMouseBuilder - Builder pattern for creating mouse devices
-// ==============================================================================
-class TinyUsbMouseBuilder {
-public:
-    TinyUsbMouseBuilder();
-    
-    // Builder methods
-    TinyUsbMouseBuilder& name(const std::string& deviceName);
-    
-    // Build the device
-    AbstractVirtualDevice* build();
-    
-    // Get configured properties
-    std::string getName() const;
-    DeviceType getDeviceType() const;
-
-private:
-    std::string m_name;
-};
-
 #endif // TINYUSB_MOUSE_DEVICE_H

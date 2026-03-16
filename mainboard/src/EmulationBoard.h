@@ -5,6 +5,8 @@
 #include "UartManager.h"
 #include "rpcinterface.h"
 #include "../shared/shared.h"
+#include "../shared/PicoConfig.h"
+#include "../shared/crc32.h"
 #include "Corocgo/corocrpc/corocrpc.h"
 
 class EmulationBoard {
@@ -14,6 +16,8 @@ public:
     corocrpc::RpcManager* rpc;
     UART_CHANNEL uartChannel;
     bool active;
+
+    PicoConfig picoConfig;  // the config this board should be running
 
     // ── Main → Pico RPC calls ─────────────────────────────────────────────
 
@@ -78,50 +82,19 @@ public:
         rpc->disposeRpcArg(arg);
     }
 
-    void setMode(int32_t mode) {
+    // Sends M2P_SET_CONFIGURATION. Returns true if Pico accepted (will reboot).
+    // Returns false with errorMsg populated if Pico rejected.
+    bool setConfiguration(const std::string& configJson, std::string& errorMsg) {
         corocrpc::RpcArg* arg = rpc->getRpcArg();
-        arg->putInt32(mode);
-        corocrpc::RpcResult result = rpc->call(M2P_SET_MODE, arg);
-        rpc->disposeRpcResult(result);
-        rpc->disposeRpcArg(arg);
-    }
-
-    int32_t getMode() {
-        corocrpc::RpcArg* arg = rpc->getRpcArg();
-        corocrpc::RpcResult result = rpc->call(M2P_GET_MODE, arg);
-        int32_t mode = -1;
-        if (result.arg != nullptr) {
-            mode = result.arg->getInt32();
-        }
-        rpc->disposeRpcResult(result);
-        rpc->disposeRpcArg(arg);
-        return mode;
-    }
-
-    bool plugDevice(int32_t slotIndex, int32_t deviceType, int32_t hat, int32_t axesMask, int32_t buttons) {
-        corocrpc::RpcArg* arg = rpc->getRpcArg();
-        arg->putInt32(slotIndex);
-        arg->putInt32(deviceType);
-        arg->putInt32(hat);
-        arg->putInt32(axesMask);
-        arg->putInt32(buttons);
-        corocrpc::RpcResult result = rpc->call(M2P_PLUG_DEVICE, arg);
+        arg->putString(configJson.c_str());
+        corocrpc::RpcResult result = rpc->call(M2P_SET_CONFIGURATION, arg);
         bool ok = false;
+        errorMsg = "timeout";
         if (result.arg != nullptr) {
             ok = result.arg->getBool();
-        }
-        rpc->disposeRpcResult(result);
-        rpc->disposeRpcArg(arg);
-        return ok;
-    }
-
-    bool unplugDevice(int32_t slotIndex) {
-        corocrpc::RpcArg* arg = rpc->getRpcArg();
-        arg->putInt32(slotIndex);
-        corocrpc::RpcResult result = rpc->call(M2P_UNPLUG_DEVICE, arg);
-        bool ok = false;
-        if (result.arg != nullptr) {
-            ok = result.arg->getBool();
+            char err[256] = {};
+            result.arg->getString(err, sizeof(err));
+            errorMsg = err;
         }
         rpc->disposeRpcResult(result);
         rpc->disposeRpcArg(arg);

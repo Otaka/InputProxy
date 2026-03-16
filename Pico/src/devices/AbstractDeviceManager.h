@@ -82,22 +82,6 @@ public:
     virtual void setAxis(int socketIndex, int axis, int value) = 0;
 
     /**
-     * Plug a device into a specific socket.
-     * The device object itself carries its name, type, and configuration.
-     * @param socketIndex Socket index (0-based)
-     * @param device Pointer to an already-configured device
-     * @return true if successful, false if socket is occupied or index is invalid
-     */
-    virtual bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) = 0;
-
-    /**
-     * Unplug a device from a specific socket.
-     * @param socketIndex Socket index (0-based)
-     * @return true if successful, false if socket was empty or index is invalid
-     */
-    virtual bool unplugDevice(uint8_t socketIndex) = 0;
-
-    /**
      * Get device instance from a specific socket.
      * @param socketIndex Socket index (0-based)
      * @return Pointer to device, or nullptr if socket is empty

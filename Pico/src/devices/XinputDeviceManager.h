@@ -57,9 +57,9 @@ public:
 
     // ===== XinputDeviceManager-specific Methods =====
 
-    // Socket-based device management
-    bool plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) override;
-    bool unplugDevice(uint8_t socketIndex) override;
+    // Device registration (call before USB init)
+    bool plugGamepad(const std::string& name = "Xbox 360 Controller");
+
     bool isSocketOccupied(uint8_t socketIndex) const;
 
     // Get occupied device count
@@ -72,6 +72,7 @@ private:
     };
 
     XInputSocket sockets[MAX_XINPUT_SOCKETS];
+    uint8_t m_nextSlot;
 
     // USB device-level properties (apply to entire composite device)
     uint16_t m_vendorId;

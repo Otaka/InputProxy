@@ -50,8 +50,8 @@ TinyUsbGamepadDevice::TinyUsbGamepadDevice(const std::string& name, uint8_t game
     for (int i = 0; i < GAMEPAD_MAX_AXES; i++) {
         report.axes[i] = 127;
     }
-    // Hat centered (null state)
-    report.hat = 0x0F;
+    // Hat centered (8 = center, within logical range [0,8])
+    report.hat = 8;
 
     // Build the HID descriptor
     buildHidDescriptor();
@@ -171,18 +171,14 @@ void TinyUsbGamepadDevice::buildHidDescriptor() {
         *p++ = 0x09; *p++ = 0x39;
         // Logical Minimum (0)
         *p++ = 0x15; *p++ = 0x00;
-        // Logical Maximum (7)
-        *p++ = 0x25; *p++ = 0x07;
-        // Physical Minimum (0)
-        *p++ = 0x35; *p++ = 0x00;
-        // Physical Maximum (315) - 2 byte format
-        *p++ = 0x46; *p++ = 0x3B; *p++ = 0x01;
+        // Logical Maximum (8) - 8 = center/released (within range, no null state needed)
+        *p++ = 0x25; *p++ = 0x08;
         // Report Count (1)
         *p++ = 0x95; *p++ = 0x01;
         // Report Size (8)
         *p++ = 0x75; *p++ = 0x08;
-        // Input (Data, Variable, Absolute, Null State)
-        *p++ = 0x81; *p++ = 0x42;
+        // Input (Data, Variable, Absolute)
+        *p++ = 0x81; *p++ = 0x02;
     }
 
     // End Collection
@@ -263,7 +259,7 @@ bool TinyUsbGamepadDevice::init() {
         report.axes[i] = 127;
     }
 
-    report.hat = 0x0F;  // Centered
+    report.hat = 8;  // Centered (8 = center in logical range [0,8])
     reportChanged = true;  // Send initial state
     hatUp = hatDown = hatLeft = hatRight = false;
 
@@ -314,8 +310,8 @@ void TinyUsbGamepadDevice::setAxis(int code, int value) {
             // Positive direction: 0-1000 -> 127-255
             scaledValue = 127 + static_cast<uint8_t>((value * 128) / 1000);
         } else {
-            // Negative direction: 0-1000 -> 0-127
-            scaledValue = static_cast<uint8_t>((value * 127) / 1000);
+            // Negative direction: 0-1000 -> 127-0 (0=center, 1000=full negative)
+            scaledValue = 127 - static_cast<uint8_t>((value * 127) / 1000);
         }
         setAxisValue(static_cast<uint8_t>(reportIndex), scaledValue);
         return;
@@ -358,7 +354,7 @@ void TinyUsbGamepadDevice::setAxisValue(uint8_t axis, uint8_t value) {
 void TinyUsbGamepadDevice::setHat(int8_t direction) {
     uint8_t hatValue;
     if (direction < 0 || direction > 7) {
-        hatValue = 0x0F;  // Centered/null
+        hatValue = 8;  // Centered (8 = center in logical range [0,8])
     } else {
         hatValue = static_cast<uint8_t>(direction);
     }
@@ -378,8 +374,8 @@ void TinyUsbGamepadDevice::updateHatFromButtons() {
 }
 
 uint8_t TinyUsbGamepadDevice::calculateHatValue() const {
-    // Hat values: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 0x0F=center
-    if (!hatUp && !hatDown && !hatLeft && !hatRight) return 0x0F;
+    // Hat values: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW, 8=center
+    if (!hatUp && !hatDown && !hatLeft && !hatRight) return 8;
 
     if (hatUp && !hatDown) {
         if (hatRight && !hatLeft) return 1;      // NE
@@ -501,71 +497,4 @@ AxesDescription TinyUsbGamepadDevice::axesDescription() {
     desc.axes = axesDescArray;
     desc.axesCount = axesDescCount;
     return desc;
-}
-
-// ==============================================================================
-// TinyUsbGamepadBuilder - Builder pattern for creating gamepad devices
-// ==============================================================================
-
-TinyUsbGamepadBuilder::TinyUsbGamepadBuilder()
-    : m_name("")
-    , m_gamepadIndex(0)
-    , m_buttonCount(16)
-    , m_axesBitMask(0)  // Default: no axes
-    , m_hasHat(true)
-{
-}
-
-TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::name(const std::string& deviceName) {
-    m_name = deviceName;
-    return *this;
-}
-
-TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::gamepadIndex(uint8_t index) {
-    if (index < MAX_GAMEPADS) {
-        m_gamepadIndex = index;
-    }
-    return *this;
-}
-
-TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::buttons(uint8_t count) {
-    if (count <= GAMEPAD_MAX_BUTTONS) {
-        m_buttonCount = count;
-    }
-    return *this;
-}
-
-TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::axes(uint8_t bitmask) {
-    m_axesBitMask = bitmask;
-    return *this;
-}
-
-TinyUsbGamepadBuilder& TinyUsbGamepadBuilder::hat(bool enable) {
-    m_hasHat = enable;
-    return *this;
-}
-
-AbstractVirtualDevice* TinyUsbGamepadBuilder::build() {
-    return new TinyUsbGamepadDevice(getName(), m_gamepadIndex, m_buttonCount, m_axesBitMask, m_hasHat);
-}
-
-std::string TinyUsbGamepadBuilder::getName() const {
-    if (!m_name.empty()) {
-        return m_name;
-    }
-    return "Gamepad " + std::to_string(m_gamepadIndex);
-}
-
-DeviceType TinyUsbGamepadBuilder::getDeviceType() const {
-    return DeviceType::GAMEPAD;
-}
-
-uint8_t TinyUsbGamepadBuilder::getAxesCount() const {
-    uint8_t count = 0;
-    for (int i = 0; i < 8; i++) {
-        if (m_axesBitMask & (1 << i)) {
-            count++;
-        }
-    }
-    return count;
 }

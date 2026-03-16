@@ -19,7 +19,9 @@ HidDeviceManager::HidDeviceManager()
       m_productId(0x0003),          // Default: Custom PID
       m_manufacturer("InputProxy"),
       m_productName("InputProxy Keyboard, Mouse & 4 Gamepads"),
-      m_serialNumber("20260118") {
+      m_serialNumber("20260118"),
+      m_nextSlot(0),
+      m_nextGamepadIndex(0) {
     // Initialize all sockets as empty
     for (int i = 0; i < MAX_DEVICE_SOCKETS; i++) {
         deviceSockets[i].occupied = false;
@@ -83,54 +85,37 @@ void HidDeviceManager::cleanupDevice(UsbDevice& info) {
     }
 }
 
-bool HidDeviceManager::plugDevice(uint8_t socketIndex, AbstractVirtualDevice* device) {
-    if (socketIndex >= MAX_DEVICE_SOCKETS) {
+bool HidDeviceManager::plugDeviceInternal(AbstractVirtualDevice* device) {
+    if (device == nullptr || m_nextSlot >= MAX_DEVICE_SOCKETS) {
+        delete device;
         return false;
     }
 
-    if (deviceSockets[socketIndex].occupied) {
-        return false;
-    }
-
-    if (device == nullptr) {
-        return false;
-    }
-
-    UsbDevice& info = deviceSockets[socketIndex];
+    uint8_t slotIndex = m_nextSlot++;
+    UsbDevice& info = deviceSockets[slotIndex];
     info.device = device;
     info.name = device->getName();
     info.deviceType = device->getDeviceType();
     info.occupied = true;
-
-    // Allocate USB resources based on socket index
-    allocateInterface(info, socketIndex);
-
-    // Regenerate USB descriptors
-    generateConfigurationDescriptor();
-
+    allocateInterface(info, slotIndex);
     return true;
 }
 
-bool HidDeviceManager::unplugDevice(uint8_t socketIndex) {
-    // Validate socket index
-    if (socketIndex >= MAX_DEVICE_SOCKETS) {
-        return false;
-    }
-    
-    // Check if socket is occupied
-    if (!deviceSockets[socketIndex].occupied) {
-        return false;  // Socket is already empty
-    }
-    
-    // Cleanup device
-    cleanupDevice(deviceSockets[socketIndex]);
-    deviceSockets[socketIndex].occupied = false;
-    
-    // Regenerate USB descriptors
+bool HidDeviceManager::plugKeyboard(const std::string& name) {
+    return plugDeviceInternal(new TinyUsbKeyboardDevice(name));
+}
+
+bool HidDeviceManager::plugMouse(const std::string& name) {
+    return plugDeviceInternal(new TinyUsbMouseDevice(name));
+}
+
+bool HidDeviceManager::plugGamepad(const std::string& name, uint8_t buttons, uint8_t axesMask, bool hat) {
+    uint8_t gamepadIndex = m_nextGamepadIndex++;
+    return plugDeviceInternal(new TinyUsbGamepadDevice(name, gamepadIndex, buttons, axesMask, hat));
+}
+
+void HidDeviceManager::prepareDescriptors() {
     generateConfigurationDescriptor();
-    
-    // Note: Unplugging a device requires USB re-enumeration
-    return true;
 }
 
 bool HidDeviceManager::isSocketOccupied(uint8_t socketIndex) const {
