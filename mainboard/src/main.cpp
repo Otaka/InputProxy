@@ -135,10 +135,29 @@ bool initRpcSystem() {
                 if (e.picoId == picoId) { entry = &e; break; }
 
             if (!entry) {
-                std::cerr << "[UART" << link.channel << "] WARNING: unknown picoId=" << picoId
-                          << " — add to emulation_boards in config.json" << std::endl;
+                std::cout << "[UART" << link.channel << "] unknown picoId=" << picoId
+                          << " — registering as active board with no devices" << std::endl;
+                EmulationBoard* board = nullptr;
+                for (auto& b : emulationBoards)
+                    if (b.serialString == picoId) { board = &b; break; }
+                if (!board) {
+                    EmulationBoard newBoard;
+                    newBoard.id           = nextEmulationBoardId++;
+                    newBoard.serialString = picoId;
+                    newBoard.rpc          = rpc;
+                    newBoard.uartChannel  = link.channel;
+                    newBoard.active       = true;
+                    newBoard.picoConfig   = {};
+                    emulationBoards.push_back(std::move(newBoard));
+                    board = &emulationBoards.back();
+                } else {
+                    board->rpc         = rpc;
+                    board->uartChannel = link.channel;
+                    board->active      = true;
+                }
+                emulatedDeviceManager->registerBoard(board, {});
                 RpcArg* out = rpc->getRpcArg();
-                out->putBool(false);
+                out->putBool(true);
                 return out;
             }
 
@@ -309,6 +328,27 @@ void _main() {
             std::cout << "[INPUT] device=" << std::setw(2) << event.deviceId
                       << " axis=" << std::setw(5) << event.axisIndex
                       << " value=" << std::setw(4) << event.value << std::endl;
+        }
+    });
+
+    // 4. Axis event processor coroutine
+    coro([]() {
+        sleep(2000);
+        while (true) {
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_1, 1000);
+            sleep(300);
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_1, 0);
+            sleep(300);
+
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_2, 1000);
+            sleep(300);
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_2, 0);
+            sleep(300);
+
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_3, 1000);
+            sleep(300);
+            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_3, 0);
+            sleep(300);
         }
     });
 
