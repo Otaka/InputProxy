@@ -4,14 +4,27 @@
 #include "RealDeviceManager.h"
 #include <iostream>
 
+// Returns the string value of key in obj, or "" if missing.
+// Logs an error if the key exists but is not a string.
+static std::string jsonStr(const nlohmann::json& obj, const char* key) {
+    auto it = obj.find(key);
+    if (it == obj.end()) return "";
+    if (!it->is_string()) {
+        std::cerr << "[mapping] field '" << key << "' must be a string, got: "
+                  << it->dump() << "\n";
+        return "";
+    }
+    return it->get<std::string>();
+}
+
 void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm_) {
     using json = nlohmann::json;
     edm = edm_;
 
     // Build VIDs
     for (const auto& v : root.value("virtual_input_devices", json::array())) {
-        std::string id   = v.value("id", "");
-        std::string name = v.value("name", "");
+        std::string id   = jsonStr(v, "id");
+        std::string name = jsonStr(v, "name");
         if (id.empty()) { std::cerr << "[mapping] VID entry missing id\n"; continue; }
         VirtualInputDevice vid;
         vid.id   = id;
@@ -22,8 +35,8 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
 
     // Build deviceAssignments
     for (const auto& rd : root.value("real_devices", json::array())) {
-        std::string id         = rd.value("id", "");
-        std::string assignedTo = rd.value("assignedTo", "");
+        std::string id         = jsonStr(rd, "id");
+        std::string assignedTo = jsonStr(rd, "assignedTo");
         if (id.empty() || assignedTo.empty()) {
             std::cerr << "[mapping] real_device entry missing id or assignedTo\n";
             continue;
@@ -37,9 +50,9 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
 
     // Build simple axis mappings (VOD resolution deferred)
     for (const auto& m : root.value("mapping", json::array())) {
-        std::string type   = m.value("type", "");
-        std::string vidId  = m.value("virtualInputDevice", "");
-        std::string vodId  = m.value("virtualOutputDevice", "");
+        std::string type   = jsonStr(m, "type");
+        std::string vidId  = jsonStr(m, "virtualInputDevice");
+        std::string vodId  = jsonStr(m, "virtualOutputDevice");
 
         if (type != "simple") {
             std::cerr << "[mapping] unsupported mapping type '" << type << "', skipping\n";
@@ -53,12 +66,14 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
         VidMappingEntry& entry = vidMappings[vidId];
         for (const auto& axis : m.value("axes", json::array())) {
             SimpleAxisMapping sam;
-            sam.vidAxisIndex  = axis.value("from", -1);
+            sam.vidAxisName   = jsonStr(axis, "from");
+            sam.vidAxisIndex  = -1;    // resolved in onRealDeviceConnected
             sam.vodId         = vodId;
-            sam.vodDeviceIndex = -1;   // resolved later in onBoardRegistered
-            sam.vodAxisIndex  = axis.value("to", -1);
-            if (sam.vidAxisIndex < 0 || sam.vodAxisIndex < 0) {
-                std::cerr << "[mapping] axis entry missing from/to, skipping\n";
+            sam.vodAxisName   = jsonStr(axis, "to");
+            sam.vodDeviceIndex = -1;   // resolved in onBoardRegistered
+            sam.vodAxisIndex  = -1;    // resolved in onBoardRegistered
+            if (sam.vidAxisName.empty() || sam.vodAxisName.empty()) {
+                std::cerr << "[mapping] axis entry missing or invalid from/to, skipping\n";
                 continue;
             }
             entry.simpleAxes.push_back(std::move(sam));
@@ -77,8 +92,14 @@ void MappingManager::onBoardRegistered() {
             if (idx == -1) {
                 std::cerr << "[mapping] VID '" << vidId
                           << "': cannot resolve VOD '" << sam.vodId << "'\n";
-            } else {
-                sam.vodDeviceIndex = idx;
+                continue;
+            }
+            sam.vodDeviceIndex = idx;
+            sam.vodAxisIndex = edm->getDevices()[idx].axisTable.getIndex(sam.vodAxisName);
+            if (sam.vodAxisIndex == -1) {
+                std::cerr << "[mapping] VID '" << vidId
+                          << "': cannot resolve VOD axis '" << sam.vodAxisName
+                          << "' on '" << sam.vodId << "'\n";
             }
         }
     }
@@ -113,6 +134,18 @@ void MappingManager::onRealDeviceConnected(const std::string& deviceIdStr, const
     }
 
     realDeviceMappings[deviceIdStr] = std::move(mapping);
+
+    // Resolve any unresolved vidAxisIndex entries now that axisTable is updated
+    for (auto& sam : vidMappings[vidId].simpleAxes) {
+        if (sam.vidAxisIndex == -1 && !sam.vidAxisName.empty()) {
+            sam.vidAxisIndex = vid.axisTable.getIndex(sam.vidAxisName);
+            if (sam.vidAxisIndex == -1) {
+                std::cerr << "[mapping] VID '" << vidId
+                          << "': cannot resolve VID axis '" << sam.vidAxisName << "'\n";
+            }
+        }
+    }
+
     std::cout << "[mapping] device '" << deviceIdStr
               << "' connected → VID '" << vidId << "'\n";
 }
@@ -127,7 +160,9 @@ void MappingManager::onRealDeviceDisconnected(const std::string& deviceIdStr) {
 
 void MappingManager::axisEvent(const std::string& deviceIdStr, int axisIndex, int value) {
     auto it = realDeviceMappings.find(deviceIdStr);
-    if (it == realDeviceMappings.end() || !it->second.active) return;
+    if (it == realDeviceMappings.end() 
+        || !it->second.active)
+        return;
 
     RealDeviceToVidMapping& mapping = it->second;
     auto axisIt = mapping.realToVidAxisIndex.find(axisIndex);

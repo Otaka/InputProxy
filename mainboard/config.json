@@ -27,7 +27,7 @@
     ],
 
     "real_devices": [
-        { "id": "<device-id-from-log>", "assignedTo": "vid1" }
+        { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1" }
     ],
 
     "mapping": [
@@ -36,7 +36,7 @@
             "virtualInputDevice": "vid1",
             "virtualOutputDevice": "vkbd1",
             "axes": [
-                { "from": 5, "to": 5 }
+                { "from": "Button 308", "to": "Button 1" }
             ]
         }
     ]

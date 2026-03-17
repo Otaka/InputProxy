@@ -28,10 +28,12 @@ struct RealDeviceToVidMapping {
 };
 
 struct SimpleAxisMapping {
-    int         vidAxisIndex;
+    std::string vidAxisName;     // axis name from config "from"; looked up in VID axisTable
+    int         vidAxisIndex;    // resolved in onRealDeviceConnected, -1 until then
     std::string vodId;           // retained for deferred resolution and diagnostics
+    std::string vodAxisName;     // axis name from config "to"; looked up in VOD axisTable
     int         vodDeviceIndex;  // -1 until resolved via EmulatedDeviceManager::resolveId
-    int         vodAxisIndex;
+    int         vodAxisIndex;    // resolved in onBoardRegistered, -1 until then
 };
 
 struct VidMappingEntry {
