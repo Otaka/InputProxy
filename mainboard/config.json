@@ -20,5 +20,24 @@
                   "buttons": 19, "axesmask": 3, "hat": false }
             ]
         }
+    ],
+
+    "virtual_input_devices": [
+        { "id": "vid1", "name": "Main Input VID" }
+    ],
+
+    "real_devices": [
+        { "id": "<device-id-from-log>", "assignedTo": "vid1" }
+    ],
+
+    "mapping": [
+        {
+            "type": "simple",
+            "virtualInputDevice": "vid1",
+            "virtualOutputDevice": "vkbd1",
+            "axes": [
+                { "from": 5, "to": 5 }
+            ]
+        }
     ]
 }

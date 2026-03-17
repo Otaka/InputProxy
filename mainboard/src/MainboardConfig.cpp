@@ -7,19 +7,20 @@
 
 using json = nlohmann::json;
 
-std::vector<BoardEntry> loadMainboardConfig(const std::string& path) {
-    std::vector<BoardEntry> result;
+nlohmann::json parseConfigFile(const std::string& path) {
     try {
         std::ifstream f(path);
         if (!f) { std::cerr << "[config] cannot open " << path << "\n"; return {}; }
+        return json::parse(f);
+    } catch (const json::exception& e) {
+        std::cerr << "[config] failed to parse " << path << ": " << e.what() << "\n";
+        return {};
+    }
+}
 
-        json root;
-        try { root = json::parse(f); }
-        catch (const json::exception& e) {
-            std::cerr << "[config] failed to parse " << path << ": " << e.what() << "\n";
-            return {};
-        }
-
+std::vector<BoardEntry> loadMainboardConfig(const nlohmann::json& root) {
+    std::vector<BoardEntry> result;
+    try {
         for (const auto& board : root.value("emulation_boards", json::array())) {
             BoardEntry entry;
             entry.picoId                = board.value("id", "");
@@ -59,7 +60,7 @@ std::vector<BoardEntry> loadMainboardConfig(const std::string& path) {
                 result.push_back(std::move(entry));
         }
     } catch (const json::exception& e) {
-        std::cerr << "[config] failed to parse " << path << ": " << e.what() << "\n";
+        std::cerr << "[config] failed to parse config: " << e.what() << "\n";
         return {};
     }
     return result;

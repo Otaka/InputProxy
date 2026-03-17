@@ -16,4 +16,5 @@ add_executable(app
     src/EmulatedDeviceManager.cpp
     src/VirtualOutputDevice.cpp
     src/MainboardConfig.cpp
+    src/MappingManager.cpp
 )

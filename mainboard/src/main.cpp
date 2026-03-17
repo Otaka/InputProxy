@@ -1,5 +1,4 @@
 #include <iostream>
-#include <iomanip>
 #include <fcntl.h>
 #include <unistd.h>
 #include "CoHttpServer.h"
@@ -14,6 +13,7 @@
 #include "EmulationBoard.h"
 #include "EmulatedDeviceManager.h"
 #include "MainboardConfig.h"
+#include "MappingManager.h"
 
 using namespace corocrpc;
 using namespace corocgo;
@@ -39,6 +39,7 @@ Channel<AxisEvent>* axisEventChannel;
 RealDeviceManager* deviceManager;
 
 EmulatedDeviceManager* emulatedDeviceManager = nullptr;
+MappingManager* mappingManager = nullptr;
 std::vector<BoardEntry> boardConfigs;          // loaded from config.json at startup
 
 
@@ -156,6 +157,7 @@ bool initRpcSystem() {
                     board->active      = true;
                 }
                 emulatedDeviceManager->registerBoard(board, {});
+                if (mappingManager) mappingManager->onBoardRegistered();
                 RpcArg* out = rpc->getRpcArg();
                 out->putBool(true);
                 return out;
@@ -189,6 +191,7 @@ bool initRpcSystem() {
                 board->active = true;
                 auto vdevices = buildVirtualDevices(*entry);
                 emulatedDeviceManager->registerBoard(board, vdevices);
+                if (mappingManager) mappingManager->onBoardRegistered();
                 std::cout << "[UART" << link.channel << "] picoId=" << picoId
                           << " config match — board active" << std::endl;
                 RpcArg* out = rpc->getRpcArg();
@@ -247,9 +250,12 @@ bool initRpcSystem() {
 void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
 
-    boardConfigs = loadMainboardConfig("config.json");
+    nlohmann::json configRoot = parseConfigFile("config.json");
+    boardConfigs = loadMainboardConfig(configRoot);
     std::cout << "Loaded " << boardConfigs.size() << " emulation board config(s)" << std::endl;
     emulatedDeviceManager = new EmulatedDeviceManager();
+    mappingManager = new MappingManager();
+    mappingManager->loadFromConfig(configRoot, emulatedDeviceManager);
     // Reserve capacity so push_back never reallocates — EmulationBoard* pointers stored
     // in VirtualOutputDevice::board must remain stable for the process lifetime.
     emulationBoards.reserve(16);
@@ -303,15 +309,17 @@ void _main() {
                 // Spawn one reading coroutine per device
                 coro([dev]() {
                     std::cout << "[CONNECT] device=" << dev->deviceIdStr << std::endl;
+                    if (mappingManager) mappingManager->onRealDeviceConnected(dev->deviceIdStr, *dev);
                     while (true) {
                         auto [flags, err] = wait_file(dev->fd, WAIT_IN);
                         if (err || !(flags & WAIT_IN)) {
                             dev->active = false;
-                            std::cout << "[DISCONNECT] device=" << dev->deviceIdStr << std::endl;
                             break;
                         }
                         if (!deviceManager->processDeviceInput(dev, axisEventChannel)) break;
                     }
+                    std::cout << "[DISCONNECT] device=" << dev->deviceIdStr << std::endl;
+                    if (mappingManager) mappingManager->onRealDeviceDisconnected(dev->deviceIdStr);
                 });
             }
             sleep(5000);
@@ -323,32 +331,7 @@ void _main() {
         while (true) {
             auto [event, err] = axisEventChannel->receive();
             if (err) break;
-            // TODO: mapping
-            // TODO: pass to virtual device manager
-            std::cout << "[INPUT] device=" << std::setw(2) << event.deviceId
-                      << " axis=" << std::setw(5) << event.axisIndex
-                      << " value=" << std::setw(4) << event.value << std::endl;
-        }
-    });
-
-    // 4. Axis event processor coroutine
-    coro([]() {
-        sleep(2000);
-        while (true) {
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_1, 1000);
-            sleep(300);
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_1, 0);
-            sleep(300);
-
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_2, 1000);
-            sleep(300);
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_2, 0);
-            sleep(300);
-
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_3, 1000);
-            sleep(300);
-            emulatedDeviceManager->setAxis(3, GAMEPAD_BTN_3, 0);
-            sleep(300);
+            if (mappingManager) mappingManager->axisEvent(event.deviceIdStr, event.axisIndex, event.value);
         }
     });
 

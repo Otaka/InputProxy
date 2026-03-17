@@ -313,7 +313,7 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
 
         auto infoIt = device->axisInfo.find(axisCode);
         if (infoIt == device->axisInfo.end()) {
-            channel->send(AxisEvent{device->deviceId, axisCode, rawValue});
+            channel->send(AxisEvent{device->deviceIdStr, axisCode, rawValue});
             continue;
         }
 
@@ -344,14 +344,14 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
             auto lastPosIt = device->lastAxisValues.find(posIdx);
             int lastPos = (lastPosIt != device->lastAxisValues.end()) ? lastPosIt->second : 0;
             if (posVal != lastPos) {
-                channel->send(AxisEvent{device->deviceId, posIdx, posVal});
+                channel->send(AxisEvent{device->deviceIdStr, posIdx, posVal});
                 device->lastAxisValues[posIdx] = posVal;
             }
 
             auto lastNegIt = device->lastAxisValues.find(negIdx);
             int lastNeg = (lastNegIt != device->lastAxisValues.end()) ? lastNegIt->second : 0;
             if (negVal != lastNeg) {
-                channel->send(AxisEvent{device->deviceId, negIdx, negVal});
+                channel->send(AxisEvent{device->deviceIdStr, negIdx, negVal});
                 device->lastAxisValues[negIdx] = negVal;
             }
         } else {
@@ -361,7 +361,7 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
                 scaledValue = std::min(1000, std::max(0,
                     (rawValue - info.minimum) * 1000 / range));
             }
-            channel->send(AxisEvent{device->deviceId, axisCode, scaledValue});
+            channel->send(AxisEvent{device->deviceIdStr, axisCode, scaledValue});
         }
     }
 

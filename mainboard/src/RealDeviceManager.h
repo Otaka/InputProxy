@@ -21,7 +21,7 @@ struct AxisInfo {
 
 // Event emitted by a real device after axis scaling/splitting
 struct AxisEvent {
-    unsigned int deviceId;
+    std::string deviceIdStr;  // was: unsigned int deviceId
     int axisIndex;
     int value;
 };

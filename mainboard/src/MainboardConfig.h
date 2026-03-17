@@ -1,21 +1,22 @@
 // mainboard/src/MainboardConfig.h
-// Loads emulation_boards from the mainboard config.json using jsmn.
 #pragma once
 #include <string>
 #include <vector>
 #include "VirtualOutputDevice.h"
-#include "PicoConfig.h"  // ../shared/ is in include_directories
+#include "PicoConfig.h"
+#include "json.hpp"
 
 struct BoardEntry {
     std::string picoId;
     PicoConfig  config;
-    std::vector<std::string> deviceIds; // human-readable IDs in same order as config.devices
+    std::vector<std::string> deviceIds;
 };
 
-// Read config.json and return all emulation_boards entries.
-// Returns empty vector on file-not-found or parse failure (logs to stderr).
-std::vector<BoardEntry> loadMainboardConfig(const std::string& path);
+// Open, parse and return the JSON root. Returns empty object on failure (logs to stderr).
+nlohmann::json parseConfigFile(const std::string& path);
+
+// Build BoardEntry list from a pre-parsed JSON root.
+std::vector<BoardEntry> loadMainboardConfig(const nlohmann::json& root);
 
 // Build a VirtualOutputDevice list for a board entry.
-// Called after loadMainboardConfig when registering into EmulatedDeviceManager.
 std::vector<VirtualOutputDevice> buildVirtualDevices(const BoardEntry& entry);
