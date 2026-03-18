@@ -17,4 +17,7 @@ add_executable(app
     src/VirtualOutputDevice.cpp
     src/MainboardConfig.cpp
     src/MappingManager.cpp
+    src/OutputSequenceParser.cpp
+    src/AxisRule.cpp
+    src/LayerManager.cpp
 )

@@ -79,8 +79,9 @@ static std::string picoDeviceTypeStr(PicoDeviceType t) {
 
 void startRestApi(int port, RealDeviceManager* deviceManager,
                   std::vector<EmulationBoard>* boards,
-                  EmulatedDeviceManager* emulatedDeviceManager) {
-    coro([port, deviceManager, boards, emulatedDeviceManager]() {
+                  EmulatedDeviceManager* emulatedDeviceManager,
+                  LayerManager* layerManager) {
+    coro([port, deviceManager, boards, emulatedDeviceManager, layerManager]() {
         auto router = std::make_shared<CoHttpRouter>();
 
         // ---- /emulationboard/* ----
@@ -279,6 +280,73 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                 }
                 json << "]}";
                 sendJson(session, 200, json.str());
+            });
+
+        // ---- /layers/* ----
+
+        router->endpoint("GET", "/layers",
+            [layerManager](coSession session, auto) {
+                std::ostringstream json;
+                json << "[";
+                bool first = true;
+                for (const auto& layer : layerManager->allLayers) {
+                    bool active = std::find(layerManager->activeStack.begin(),
+                                            layerManager->activeStack.end(),
+                                            const_cast<Layer*>(&layer))
+                                  != layerManager->activeStack.end();
+                    if (!first) json << ",";
+                    first = false;
+                    json << "{"
+                         << "\"id\":\""   << jsonEscape(layer.id)   << "\","
+                         << "\"name\":\"" << jsonEscape(layer.name) << "\","
+                         << "\"active\":" << (active ? "true" : "false")
+                         << "}";
+                }
+                json << "]";
+                sendJson(session, 200, json.str());
+            });
+
+        router->endpoint("GET", "/layers/active",
+            [layerManager](coSession session, auto) {
+                std::ostringstream json;
+                json << "[";
+                bool first = true;
+                for (const auto* layer : layerManager->activeStack) {
+                    if (!first) json << ",";
+                    first = false;
+                    json << "{"
+                         << "\"id\":\""   << jsonEscape(layer->id)   << "\","
+                         << "\"name\":\"" << jsonEscape(layer->name) << "\""
+                         << "}";
+                }
+                json << "]";
+                sendJson(session, 200, json.str());
+            });
+
+        router->endpoint("POST", "/layers/{id}/activate",
+            [layerManager](coSession session, auto vars) {
+                auto it = vars.find("id");
+                if (it == vars.end()) {
+                    sendJson(session, 400, "{\"error\":\"missing id\"}"); return;
+                }
+                if (!layerManager->findLayer(it->second)) {
+                    sendJson(session, 404, "{\"error\":\"layer not found\"}"); return;
+                }
+                layerManager->activate(it->second);
+                sendJson(session, 200, "{\"ok\":true}");
+            });
+
+        router->endpoint("POST", "/layers/{id}/deactivate",
+            [layerManager](coSession session, auto vars) {
+                auto it = vars.find("id");
+                if (it == vars.end()) {
+                    sendJson(session, 400, "{\"error\":\"missing id\"}"); return;
+                }
+                if (!layerManager->findLayer(it->second)) {
+                    sendJson(session, 404, "{\"error\":\"layer not found\"}"); return;
+                }
+                layerManager->deactivate(it->second);
+                sendJson(session, 200, "{\"ok\":true}");
             });
 
         // ---- Server loop ----

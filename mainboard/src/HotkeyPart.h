@@ -6,6 +6,7 @@
 
 struct VidAxisRef {
     std::string vidId;
+    std::string axisName;  // retained for deferred resolution
     int         axisIndex = -1;
 };
 

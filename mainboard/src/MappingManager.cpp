@@ -2,10 +2,13 @@
 #include "MappingManager.h"
 #include "EmulatedDeviceManager.h"
 #include "RealDeviceManager.h"
+#include "OutputSequenceParser.h"
+#include "corocgo/corocgo.h"
 #include <iostream>
+#include <algorithm>
 
-// Returns the string value of key in obj, or "" if missing.
-// Logs an error if the key exists but is not a string.
+using namespace corocgo;
+
 static std::string jsonStr(const nlohmann::json& obj, const char* key) {
     auto it = obj.find(key);
     if (it == obj.end()) return "";
@@ -17,137 +20,298 @@ static std::string jsonStr(const nlohmann::json& obj, const char* key) {
     return it->get<std::string>();
 }
 
+// ---------------------------------------------------------------------------
+// Config parsing helpers
+// ---------------------------------------------------------------------------
+
+static std::vector<HotkeyPart> parseHotkeyString(const std::string& hotkey,
+                                                   const std::string& defaultVidId) {
+    std::vector<HotkeyPart> parts;
+    std::vector<std::string> partStrs;
+    std::string remaining = hotkey;
+    while (true) {
+        auto pos = remaining.find("->");
+        if (pos == std::string::npos) {
+            partStrs.push_back(remaining);
+            break;
+        }
+        partStrs.push_back(remaining.substr(0, pos));
+        remaining = remaining.substr(pos + 2);
+    }
+
+    for (const auto& partStr : partStrs) {
+        HotkeyPart part;
+        std::vector<std::string> axisTokens;
+        std::string rem = partStr;
+        while (true) {
+            auto pos = rem.find('+');
+            if (pos == std::string::npos) {
+                axisTokens.push_back(rem);
+                break;
+            }
+            axisTokens.push_back(rem.substr(0, pos));
+            rem = rem.substr(pos + 1);
+        }
+
+        for (auto t : axisTokens) {
+            while (!t.empty() && std::isspace((unsigned char)t.front())) t.erase(t.begin());
+            while (!t.empty() && std::isspace((unsigned char)t.back()))  t.pop_back();
+            if (t.empty()) continue;
+
+            bool isModifier = (t[0] == '!');
+            if (isModifier) t = t.substr(1);
+
+            std::string vidId    = defaultVidId;
+            std::string axisName = t;
+            auto colonPos = t.find(':');
+            if (colonPos != std::string::npos) {
+                vidId    = t.substr(0, colonPos);
+                axisName = t.substr(colonPos + 1);
+            }
+
+            VidAxisRef ref;
+            ref.vidId     = vidId;
+            ref.axisName  = axisName;
+            ref.axisIndex = -1;
+
+            if (isModifier) {
+                part.modifiers.push_back(ref);
+            } else {
+                if (part.activationAxis.has_value()) {
+                    std::cerr << "[mapping] hotkey part has more than one activation axis, ignoring extra\n";
+                } else {
+                    part.activationAxis = ref;
+                }
+            }
+        }
+
+        auto addVid = [&](const std::string& vid) {
+            if (std::find(part.involvedVids.begin(), part.involvedVids.end(), vid)
+                == part.involvedVids.end())
+                part.involvedVids.push_back(vid);
+        };
+        for (const auto& m : part.modifiers) addVid(m.vidId);
+        if (part.activationAxis) addVid(part.activationAxis->vidId);
+
+        parts.push_back(std::move(part));
+    }
+    return parts;
+}
+
+static std::vector<std::unique_ptr<Action>> parseActionList(const nlohmann::json& arr) {
+    using json = nlohmann::json;
+    std::vector<std::unique_ptr<Action>> actions;
+    if (!arr.is_array()) return actions;
+
+    for (const auto& a : arr) {
+        std::string type = a.value("type", "");
+        if (type == "emit_axis") {
+            auto act       = std::make_unique<EmitAxisAction>();
+            act->vodId     = a.value("vod", "");
+            act->axisName  = a.value("axis", "");
+            act->value     = a.value("value", 0);
+            act->axisIndex = -1;
+            actions.push_back(std::move(act));
+        } else if (type == "output_sequence") {
+            auto act       = std::make_unique<OutputSequenceAction>();
+            act->vodId     = a.value("vod", "");
+            auto parsed    = parseOutputSequence(a.value("sequence", ""));
+            act->steps     = std::move(parsed.steps);
+            act->axisNames = std::move(parsed.axisNames);
+            actions.push_back(std::move(act));
+        } else if (type == "sleep") {
+            auto act    = std::make_unique<SleepAction>();
+            act->timeMs = a.value("time", 0);
+            actions.push_back(std::move(act));
+        } else {
+            std::cerr << "[mapping] unknown action type '" << type << "', skipping\n";
+        }
+    }
+    return actions;
+}
+
+// ---------------------------------------------------------------------------
+// loadFromConfig
+// ---------------------------------------------------------------------------
+
 void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm_) {
     using json = nlohmann::json;
     edm = edm_;
 
-    // Build VIDs
     for (const auto& v : root.value("virtual_input_devices", json::array())) {
         std::string id   = jsonStr(v, "id");
         std::string name = jsonStr(v, "name");
-        if (id.empty()) { std::cerr << "[mapping] VID entry missing id\n"; continue; }
+        if (id.empty()) { std::cerr << "[mapping] VID missing id\n"; continue; }
         VirtualInputDevice vid;
         vid.id   = id;
         vid.name = name;
         vids.emplace(id, std::move(vid));
-        vidMappings[id].vid = &vids.at(id);
     }
 
-    // Build deviceAssignments
     for (const auto& rd : root.value("real_devices", json::array())) {
         std::string id         = jsonStr(rd, "id");
         std::string assignedTo = jsonStr(rd, "assignedTo");
-        if (id.empty() || assignedTo.empty()) {
-            std::cerr << "[mapping] real_device entry missing id or assignedTo\n";
-            continue;
-        }
+        if (id.empty() || assignedTo.empty()) continue;
         if (vids.find(assignedTo) == vids.end()) {
-            std::cerr << "[mapping] real_device '" << id << "' assigned to unknown VID '" << assignedTo << "'\n";
+            std::cerr << "[mapping] device '" << id << "' assigned to unknown VID '" << assignedTo << "'\n";
             continue;
         }
         deviceAssignments[id] = assignedTo;
     }
 
-    // Build simple axis mappings (VOD resolution deferred)
-    for (const auto& m : root.value("mapping", json::array())) {
-        std::string type   = jsonStr(m, "type");
-        std::string vidId  = jsonStr(m, "virtualInputDevice");
-        std::string vodId  = jsonStr(m, "virtualOutputDevice");
+    for (const auto& lj : root.value("layers", json::array())) {
+        Layer layer;
+        layer.id   = jsonStr(lj, "id");
+        layer.name = jsonStr(lj, "name");
+        if (layer.id.empty()) { std::cerr << "[mapping] layer missing id\n"; continue; }
 
-        if (type != "simple") {
-            std::cerr << "[mapping] unsupported mapping type '" << type << "', skipping\n";
-            continue;
-        }
-        if (vids.find(vidId) == vids.end()) {
-            std::cerr << "[mapping] mapping references unknown VID '" << vidId << "'\n";
-            continue;
-        }
+        for (const auto& rj : lj.value("rules", json::array())) {
+            std::string type  = jsonStr(rj, "type");
+            std::string vidId = jsonStr(rj, "vid");
 
-        VidMappingEntry& entry = vidMappings[vidId];
-        for (const auto& axis : m.value("axes", json::array())) {
-            SimpleAxisMapping sam;
-            sam.vidAxisName   = jsonStr(axis, "from");
-            sam.vidAxisIndex  = -1;    // resolved in onRealDeviceConnected
-            sam.vodId         = vodId;
-            sam.vodAxisName   = jsonStr(axis, "to");
-            sam.vodDeviceIndex = -1;   // resolved in onBoardRegistered
-            sam.vodAxisIndex  = -1;    // resolved in onBoardRegistered
-            if (sam.vidAxisName.empty() || sam.vodAxisName.empty()) {
-                std::cerr << "[mapping] axis entry missing or invalid from/to, skipping\n";
-                continue;
+            if (type == "simple") {
+                std::string vodId = jsonStr(rj, "vod");
+                for (const auto& axj : rj.value("axes", json::array())) {
+                    std::string from = jsonStr(axj, "from");
+                    std::string to   = jsonStr(axj, "to");
+                    if (from.empty() || to.empty()) continue;
+
+                    AxisRule rule;
+                    rule.propagate = true;
+                    rule.exclusive = false;
+
+                    HotkeyPart part;
+                    VidAxisRef ref;
+                    ref.vidId     = vidId;
+                    ref.axisName  = from;
+                    ref.axisIndex = -1;
+                    part.activationAxis = ref;
+                    part.involvedVids   = { vidId };
+                    rule.hotkeyParts.push_back(std::move(part));
+
+                    auto press = std::make_unique<EmitAxisAction>();
+                    press->vodId    = vodId;
+                    press->axisName = to;
+                    press->value    = 1000;
+                    rule.pressActions.push_back(std::move(press));
+
+                    auto release = std::make_unique<EmitAxisAction>();
+                    release->vodId    = vodId;
+                    release->axisName = to;
+                    release->value    = 0;
+                    rule.releaseActions.push_back(std::move(release));
+
+                    layer.rules.push_back(std::move(rule));
+                }
+            } else if (type == "hotkey") {
+                std::string hotkeyStr = jsonStr(rj, "hotkey");
+                bool propagate = rj.value("propagate", false);
+
+                AxisRule rule;
+                rule.propagate   = propagate;
+                rule.hotkeyParts = parseHotkeyString(hotkeyStr, vidId);
+
+                auto pressIt   = rj.find("press_action");
+                auto releaseIt = rj.find("release_action");
+                if (pressIt != rj.end())
+                    rule.pressActions   = parseActionList(*pressIt);
+                if (releaseIt != rj.end())
+                    rule.releaseActions = parseActionList(*releaseIt);
+
+                layer.rules.push_back(std::move(rule));
+            } else {
+                std::cerr << "[mapping] unknown rule type '" << type << "'\n";
             }
-            entry.simpleAxes.push_back(std::move(sam));
         }
+
+        bool activeAtBoot = lj.value("active", true);
+        layerManager.allLayers.push_back(std::move(layer));
+        if (activeAtBoot)
+            layerManager.activeStack.push_back(&layerManager.allLayers.back());
     }
 
-    std::cout << "[mapping] loaded " << vids.size() << " VID(s), "
-              << deviceAssignments.size() << " device assignment(s)\n";
+    std::cout << "[mapping] loaded " << layerManager.allLayers.size() << " layer(s)\n";
+}
+
+// ---------------------------------------------------------------------------
+// Resolution
+// ---------------------------------------------------------------------------
+
+void MappingManager::resolveVidAxes() {
+    for (auto& layer : layerManager.allLayers) {
+        for (auto& rule : layer.rules) {
+            for (auto& part : rule.hotkeyParts) {
+                auto resolveRef = [&](VidAxisRef& ref) {
+                    if (ref.axisIndex != -1 || ref.axisName.empty()) return;
+                    auto vidIt = vids.find(ref.vidId);
+                    if (vidIt == vids.end()) return;
+                    ref.axisIndex = vidIt->second.axisTable.getIndex(ref.axisName);
+                };
+                for (auto& mod : part.modifiers) resolveRef(mod);
+                if (part.activationAxis) resolveRef(part.activationAxis.value());
+            }
+        }
+        layer.rebuildActivationIndex();
+    }
+}
+
+void MappingManager::resolveVodAxes() {
+    for (auto& layer : layerManager.allLayers) {
+        for (auto& rule : layer.rules) {
+            auto resolveAction = [&](Action* act) {
+                if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
+                    if (ea->axisIndex != -1 || ea->axisName.empty()) return;
+                    int devIdx = edm->resolveId(ea->vodId);
+                    if (devIdx == -1) return;
+                    ea->axisIndex = edm->getDevices()[devIdx].axisTable.getIndex(ea->axisName);
+                } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
+                    int devIdx = edm->resolveId(osa->vodId);
+                    if (devIdx == -1) return;
+                    for (size_t i = 0; i < osa->steps.size(); ++i) {
+                        if (osa->steps[i].type == SequenceStep::Type::SetAxis &&
+                            osa->steps[i].axisIndex == -1 &&
+                            i < osa->axisNames.size() && !osa->axisNames[i].empty()) {
+                            osa->steps[i].axisIndex =
+                                edm->getDevices()[devIdx].axisTable.getIndex(osa->axisNames[i]);
+                        }
+                    }
+                }
+            };
+            for (auto& a : rule.pressActions)  resolveAction(a.get());
+            for (auto& a : rule.releaseActions) resolveAction(a.get());
+        }
+    }
 }
 
 void MappingManager::onBoardRegistered() {
-    for (auto& [vidId, entry] : vidMappings) {
-        for (auto& sam : entry.simpleAxes) {
-            if (sam.vodDeviceIndex != -1) continue;
-            int idx = edm->resolveId(sam.vodId);
-            if (idx == -1) {
-                std::cerr << "[mapping] VID '" << vidId
-                          << "': cannot resolve VOD '" << sam.vodId << "'\n";
-                continue;
-            }
-            sam.vodDeviceIndex = idx;
-            sam.vodAxisIndex = edm->getDevices()[idx].axisTable.getIndex(sam.vodAxisName);
-            if (sam.vodAxisIndex == -1) {
-                std::cerr << "[mapping] VID '" << vidId
-                          << "': cannot resolve VOD axis '" << sam.vodAxisName
-                          << "' on '" << sam.vodId << "'\n";
-            }
-        }
-    }
+    resolveVodAxes();
 }
 
-void MappingManager::onRealDeviceConnected(const std::string& deviceIdStr, const RealDevice& device) {
+void MappingManager::onRealDeviceConnected(const std::string& deviceIdStr,
+                                            const RealDevice& device) {
     auto assignIt = deviceAssignments.find(deviceIdStr);
-    if (assignIt == deviceAssignments.end()) {
-        // Device not listed in config — not assigned to any VID, ignore
-        return;
-    }
+    if (assignIt == deviceAssignments.end()) return;
+
     const std::string& vidId = assignIt->second;
-    VirtualInputDevice& vid = vids.at(vidId);
+    VirtualInputDevice& vid  = vids.at(vidId);
 
-    // Merge device axes into VID axisTable (union, conflict = first wins)
     for (const auto& entry : device.axes.getEntries()) {
-        if (!vid.axisTable.hasName(entry.name)) {
+        if (!vid.axisTable.hasName(entry.name))
             vid.axisTable.addEntry(entry.name, entry.index);
-        }
-        // If name exists with same index: no-op. If different index: skip (first wins).
     }
 
-    // Build axis index translation: real device axis index → VID axis index
     RealDeviceToVidMapping mapping;
     mapping.vid    = &vid;
     mapping.active = true;
     for (const auto& entry : device.axes.getEntries()) {
         int vidAxisIndex = vid.axisTable.getIndex(entry.name);
-        if (vidAxisIndex != -1) {
+        if (vidAxisIndex != -1)
             mapping.realToVidAxisIndex[entry.index] = vidAxisIndex;
-        }
     }
-
     realDeviceMappings[deviceIdStr] = std::move(mapping);
 
-    // Resolve any unresolved vidAxisIndex entries now that axisTable is updated
-    for (auto& sam : vidMappings[vidId].simpleAxes) {
-        if (sam.vidAxisIndex == -1 && !sam.vidAxisName.empty()) {
-            sam.vidAxisIndex = vid.axisTable.getIndex(sam.vidAxisName);
-            if (sam.vidAxisIndex == -1) {
-                std::cerr << "[mapping] VID '" << vidId
-                          << "': cannot resolve VID axis '" << sam.vidAxisName << "'\n";
-            }
-        }
-    }
-
-    std::cout << "[mapping] device '" << deviceIdStr
-              << "' connected → VID '" << vidId << "'\n";
+    resolveVidAxes();
+    std::cout << "[mapping] device '" << deviceIdStr << "' → VID '" << vidId << "'\n";
 }
 
 void MappingManager::onRealDeviceDisconnected(const std::string& deviceIdStr) {
@@ -158,26 +322,129 @@ void MappingManager::onRealDeviceDisconnected(const std::string& deviceIdStr) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Dispatch
+// ---------------------------------------------------------------------------
+
+void MappingManager::spawnActions(std::vector<std::unique_ptr<Action>>& actions) {
+    std::vector<Action*> ptrs;
+    for (auto& a : actions) ptrs.push_back(a.get());
+
+    coro([ptrs, this]() {
+        for (Action* act : ptrs) {
+            if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
+                int devIdx = edm->resolveId(ea->vodId);
+                if (devIdx != -1 && ea->axisIndex != -1)
+                    edm->setAxis(devIdx, ea->axisIndex, ea->value);
+            } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
+                int devIdx = edm->resolveId(osa->vodId);
+                for (const auto& step : osa->steps) {
+                    if (step.type == SequenceStep::Type::SetAxis) {
+                        if (devIdx != -1 && step.axisIndex != -1)
+                            edm->setAxis(devIdx, step.axisIndex, step.value);
+                    } else {
+                        sleep(step.timeMs);
+                    }
+                }
+            } else if (auto* sa = dynamic_cast<SleepAction*>(act)) {
+                sleep(sa->timeMs);
+            }
+        }
+    });
+}
+
+void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
+                                           int vidAxisIndex, int value) {
+    for (Layer* layer : layerManager.stack()) {
+        bool consumed = false;
+
+        if (value == 0) {
+            VidAxisKey key { vidId, vidAxisIndex };
+            auto it = layer->pendingReleaseRules.find(key);
+            if (it != layer->pendingReleaseRules.end()) {
+                for (auto* rule : it->second) {
+                    spawnActions(rule->releaseActions);
+                    rule->reset();
+                }
+                layer->pendingReleaseRules.erase(it);
+            }
+            continue;
+        }
+
+        // Press: process active rules first
+        {
+            std::vector<AxisRule*> toRemove;
+            for (auto* rule : layer->activeRules) {
+                auto result = rule->processAxisEvent(vidId, vidAxisIndex, vidState);
+                if (result == AxisRule::EventResult::Cancelled) {
+                    toRemove.push_back(rule);
+                } else if (result == AxisRule::EventResult::Completed) {
+                    toRemove.push_back(rule);
+                    spawnActions(rule->pressActions);
+                    if (!rule->releaseActions.empty()) {
+                        const auto& lastPart = rule->hotkeyParts.back();
+                        if (lastPart.activationAxis.has_value()) {
+                            VidAxisKey key { lastPart.activationAxis->vidId,
+                                             lastPart.activationAxis->axisIndex };
+                            layer->pendingReleaseRules[key].push_back(rule);
+                            rule->state = AxisRule::State::WaitingForRelease;
+                        }
+                    }
+                    if (!rule->propagate) consumed = true;
+                }
+            }
+            for (auto* r : toRemove) {
+                layer->activeRules.erase(
+                    std::remove(layer->activeRules.begin(), layer->activeRules.end(), r),
+                    layer->activeRules.end());
+            }
+        }
+
+        if (!consumed) {
+            VidAxisKey key { vidId, vidAxisIndex };
+            auto it = layer->activationIndex.find(key);
+            if (it != layer->activationIndex.end()) {
+                for (auto* rule : it->second) {
+                    if (std::find(layer->activeRules.begin(), layer->activeRules.end(), rule)
+                        != layer->activeRules.end()) continue;
+
+                    auto result = rule->tryActivateFirstStep(vidId, vidAxisIndex, vidState);
+                    if (result == AxisRule::EventResult::Advanced) {
+                        layer->activeRules.push_back(rule);
+                        if (!rule->propagate) consumed = true;
+                    } else if (result == AxisRule::EventResult::Completed) {
+                        spawnActions(rule->pressActions);
+                        if (!rule->releaseActions.empty()) {
+                            const auto& lastPart = rule->hotkeyParts.back();
+                            if (lastPart.activationAxis.has_value()) {
+                                VidAxisKey rKey { lastPart.activationAxis->vidId,
+                                                  lastPart.activationAxis->axisIndex };
+                                layer->pendingReleaseRules[rKey].push_back(rule);
+                                rule->state = AxisRule::State::WaitingForRelease;
+                            }
+                        }
+                        if (!rule->propagate) consumed = true;
+                    }
+                }
+            }
+        }
+
+        if (consumed) break;
+    }
+}
+
 void MappingManager::axisEvent(const std::string& deviceIdStr, int axisIndex, int value) {
     auto it = realDeviceMappings.find(deviceIdStr);
-    if (it == realDeviceMappings.end() 
-        || !it->second.active)
-        return;
+    if (it == realDeviceMappings.end() || !it->second.active) return;
 
     RealDeviceToVidMapping& mapping = it->second;
     auto axisIt = mapping.realToVidAxisIndex.find(axisIndex);
     if (axisIt == mapping.realToVidAxisIndex.end()) return;
 
-    processVidAxisEvent(mapping.vid, axisIt->second, value);
-}
+    const std::string& vidId   = mapping.vid->id;
+    int                vidAxis = axisIt->second;
 
-void MappingManager::processVidAxisEvent(VirtualInputDevice* vid, int vidAxisIndex, int value) {
-    auto it = vidMappings.find(vid->id);
-    if (it == vidMappings.end()) return;
+    vidState[vidId][vidAxis] = value;
 
-    for (auto& sam : it->second.simpleAxes) {
-        if (sam.vidAxisIndex == vidAxisIndex && sam.vodDeviceIndex != -1) {
-            edm->setAxis(sam.vodDeviceIndex, sam.vodAxisIndex, value);
-        }
-    }
+    dispatchVidAxisEvent(vidId, vidAxis, value);
 }

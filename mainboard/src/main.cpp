@@ -336,7 +336,8 @@ void _main() {
     });
 
     // 5. HTTP API server
-    startRestApi(8080, deviceManager, &emulationBoards, emulatedDeviceManager);
+    startRestApi(8080, deviceManager, &emulationBoards, emulatedDeviceManager,
+                 &mappingManager->getLayerManager());
 }
 
 int main() {

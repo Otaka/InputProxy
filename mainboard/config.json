@@ -9,8 +9,8 @@
             "serial": "20260101",
             "devices": [
                 { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
-                { "id": "vmouse", "type": "mouse",      "name": "InputProxy Mouse" },
-                { "id": "vgp1",   "type": "hidgamepad", "name": "InputProxy Gamepad 1",
+                { "id": "vmouse", "type": "mouse",     "name": "InputProxy Mouse" },
+                { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1",
                   "buttons": 16, "axesmask": 3, "hat": true },
                 { "id": "vgp2",   "type": "hidgamepad", "name": "InputProxy Gamepad 2",
                   "buttons": 17, "axesmask": 3, "hat": true },
@@ -30,13 +30,20 @@
         { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1" }
     ],
 
-    "mapping": [
+    "layers": [
         {
-            "type": "simple",
-            "virtualInputDevice": "vid1",
-            "virtualOutputDevice": "vkbd1",
-            "axes": [
-                { "from": "Button 308", "to": "Button 1" }
+            "id": "base",
+            "name": "Base Layer",
+            "active": true,
+            "rules": [
+                {
+                    "type": "simple",
+                    "vid": "vid1",
+                    "vod": "vkbd1",
+                    "axes": [
+                        { "from": "Button 308", "to": "Button 1" }
+                    ]
+                }
             ]
         }
     ]

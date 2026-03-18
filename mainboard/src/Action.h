@@ -16,8 +16,9 @@ struct EmitAxisAction : Action {
 };
 
 struct OutputSequenceAction : Action {
-    std::string              vodId;
-    std::vector<SequenceStep> steps;  // parsed at config load time
+    std::string               vodId;
+    std::vector<SequenceStep> steps;
+    std::vector<std::string>  axisNames; // parallel to steps; empty for Wait steps
 };
 
 struct SleepAction : Action {
