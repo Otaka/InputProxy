@@ -28,7 +28,7 @@ std::vector<BoardEntry> loadMainboardConfig(const nlohmann::json& root) {
             entry.config.pid            = board.value("pid", 0x0004);
             entry.config.manufacturer   = board.value("manufacturer", "InputProxy");
             entry.config.product        = board.value("product", "InputProxy Device");
-            entry.config.serial         = board.value("serial", "000000");
+            entry.config.serial         = board.value("serial", "000001");
 
             for (const auto& dev : board.value("devices", json::array())) {
                 std::string typeStr = dev.value("type", "");

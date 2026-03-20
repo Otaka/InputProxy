@@ -377,7 +377,7 @@ int _main() {
         int index = 0;
         char buffer[256];
         while (true) {
-            sleep(1000);
+            sleep(10000);
             sprintf(buffer, "Hello world %d", index++);
             logChannel->send(buffer);
         }

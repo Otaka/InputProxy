@@ -29,16 +29,6 @@
 #define MAX_GAMEPADS 4
 #endif
 
-// HID Interface Index for Gamepads
-// Interface 0: Keyboard
-// Interface 1: Mouse
-// Interface 2-5: Gamepads 0-3
-enum {
-    ITF_NUM_GAMEPAD_0 = 2,
-    ITF_NUM_GAMEPAD_1 = 3,
-    ITF_NUM_GAMEPAD_2 = 4,
-    ITF_NUM_GAMEPAD_3 = 5
-};
 
 class TinyUsbGamepadDevice : public AbstractVirtualDevice {
 public:
@@ -67,7 +57,6 @@ public:
     void setReport(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize);
 
     // Accessors
-    uint8_t getInterfaceNum() const { return ITF_NUM_GAMEPAD_0 + gamepadIndex; }
     uint8_t getGamepadIndex() const { return gamepadIndex; }
     uint8_t getNumButtons() const { return numButtons; }
     uint8_t getAxesBitMask() const { return axesBitMask; }

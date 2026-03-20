@@ -168,14 +168,14 @@ void TinyUsbMouseDevice::scroll(int8_t wheel, int8_t h_wheel) {
 
 void TinyUsbMouseDevice::update() {
     // Send report if USB is ready and there are changes
-    if (tud_hid_n_ready(ITF_NUM_MOUSE) && reportChanged) {
+    if (tud_hid_n_ready(m_interfaceNum) && reportChanged) {
         sendReport();
     }
 }
 
 void TinyUsbMouseDevice::sendReport() {
     // Send mouse report
-    tud_hid_n_report(ITF_NUM_MOUSE, REPORT_ID_MOUSE, &mouseReport, sizeof(mouseReport));
+    tud_hid_n_report(m_interfaceNum, REPORT_ID_MOUSE, &mouseReport, sizeof(mouseReport));
     
     // After sending movement/scroll, reset those values (buttons remain)
     // This prevents repeated movements from a single input

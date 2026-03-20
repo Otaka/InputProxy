@@ -329,7 +329,7 @@ void MappingManager::executeActions(std::vector<std::unique_ptr<Action>>& action
         if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
             int devIdx = edm->resolveId(ea->vodId);
             if (devIdx != -1 && ea->axisIndex != -1){
-               // std::cout<<"Action Emit axis index="<<ea->axisIndex<<" value="<<value<<std::endl;
+                std::cout<<"Action Emit axis index="<<ea->axisIndex<<" value="<<value<<std::endl;
                 edm->setAxis(devIdx, ea->axisIndex, value);
             }
         } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
@@ -337,7 +337,7 @@ void MappingManager::executeActions(std::vector<std::unique_ptr<Action>>& action
             for (const auto& step : osa->steps) {
                 if (step.type == SequenceStep::Type::SetAxis) {
                     if (devIdx != -1 && step.axisIndex != -1){
-                   //     std::cout<<"Action sequence index="<<step.axisIndex<<" value="<<step.value<<std::endl;
+                        std::cout<<"Action sequence index="<<step.axisIndex<<" value="<<step.value<<std::endl;
                         edm->setAxis(devIdx, step.axisIndex, step.value);
                     }
                 } else {

@@ -24,12 +24,6 @@
 // 0x00B7 - Stop
 // 0x00CD - Play/Pause
 
-// HID Interface Index for Keyboard (defined in usb_descriptors.c)
-// Interface 0: Keyboard
-// Interface 1-3: Reserved for future devices (gamepads, etc.)
-enum {
-    ITF_NUM_KEYBOARD = 0
-};
 
 class TinyUsbKeyboardDevice : public AbstractVirtualDevice {
 public:
@@ -54,8 +48,6 @@ public:
     uint16_t getReport(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen);
     void setReport(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize);
 
-    // Get interface number
-    uint8_t getInterfaceNum() const { return ITF_NUM_KEYBOARD; }
 
 private:
     std::string m_name;

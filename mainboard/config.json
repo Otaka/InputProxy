@@ -5,13 +5,10 @@
             "vid": 4618,
             "pid": 4,
             "manufacturer": "InputProxy",
-            "product": "InputProxy Composite",
-            "serial": "20260101",
+            "product": "InputProxy Composite1",
+            "serial": "20260106",
             "devices": [
-                { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
-                { "id": "vmouse", "type": "mouse",     "name": "InputProxy Mouse" },
-                { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1",
-                  "buttons": 16, "axesmask": 3, "hat": true }
+                { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1", "buttons": 16, "axesmask": 15, "hat": true }
             ]
         }
     ],
@@ -43,6 +40,22 @@
                         { "from": "Stick LX+", "to": "Stick LX+" },
                         { "from": "Stick LY-", "to": "Stick LY-" },
                         { "from": "Stick LY+", "to": "Stick LY+" }
+                    ]
+                },
+                {
+                    "type": "simple",
+                    "vid": "vid1",
+                    "vod": "vmouse",
+                    "axes": [
+                        { "from": "Button 315", "to": "Button Right" }
+                    ]
+                },
+                {
+                    "type": "simple",
+                    "vid": "vid1",
+                    "vod": "vkbd1",
+                    "axes": [
+                        { "from": "Button 314", "to": "KEY_8" }
                     ]
                 }
             ]

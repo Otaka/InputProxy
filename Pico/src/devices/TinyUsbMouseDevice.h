@@ -10,12 +10,6 @@
 
 // HID Report IDs
 #define REPORT_ID_MOUSE 1  // Standard mouse with buttons, X/Y movement, and wheel
-// HID Interface Index for Mouse (defined in usb_descriptors.c)
-// Interface 0: Keyboard
-// Interface 1: Mouse
-enum {
-    ITF_NUM_MOUSE = 1
-};
 
 class TinyUsbMouseDevice : public AbstractVirtualDevice {
 public:
@@ -42,8 +36,6 @@ public:
     uint16_t getReport(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen);
     void setReport(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize);
 
-    // Get interface number
-    uint8_t getInterfaceNum() const { return ITF_NUM_MOUSE; }
 
 private:
     std::string m_name;

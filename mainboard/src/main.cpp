@@ -331,7 +331,7 @@ void _main() {
         while (true) {
             auto [event, err] = axisEventChannel->receive();
             if (err) break;
-           // std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex<<" value="<<event.value<<std::endl;
+            std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex<<" value="<<event.value<<std::endl;
             if (mappingManager) mappingManager->axisEvent(event.deviceIdStr, event.axisIndex, event.value);
         }
     });

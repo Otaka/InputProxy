@@ -75,19 +75,6 @@ const uint8_t hid_report_descriptor_keyboard[] = {
         HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
     HID_COLLECTION_END,
 
-    // Consumer Control Report (Report ID 3) - Multimedia keys (up to 30 simultaneous)
-    HID_USAGE_PAGE(HID_USAGE_PAGE_CONSUMER),
-    HID_USAGE(HID_USAGE_CONSUMER_CONTROL),
-    HID_COLLECTION(HID_COLLECTION_APPLICATION),
-        HID_REPORT_ID(REPORT_ID_CONSUMER_CONTROL)
-        HID_LOGICAL_MIN(0),
-        HID_LOGICAL_MAX_N(0x03FF, 2),
-        HID_USAGE_MIN(0),
-        HID_USAGE_MAX_N(0x03FF, 2),
-        HID_REPORT_COUNT(30),
-        HID_REPORT_SIZE(16),
-        HID_INPUT(HID_DATA | HID_ARRAY | HID_ABSOLUTE),
-    HID_COLLECTION_END,
 };
 
 const uint16_t hid_report_descriptor_keyboard_size = sizeof(hid_report_descriptor_keyboard);
@@ -207,9 +194,7 @@ void TinyUsbKeyboardDevice::releaseConsumerKey(uint16_t usage_code) {
 }
 
 void TinyUsbKeyboardDevice::update() {
-    // Send HID reports if device is ready and reports have changed
-    // NOTE: Use HID instance index 0 (first HID device), not interface number
-    if (tud_hid_n_ready(0)) {
+    if (tud_hid_n_ready(m_interfaceNum)) {
         sendReports();
     }
 }
@@ -286,8 +271,8 @@ void TinyUsbKeyboardDevice::updateBootReport() {
 void TinyUsbKeyboardDevice::sendReports() {
     // NOTE: Use HID instance index 0 (first HID device), not interface number
     // Send boot keyboard report if changed
-    if (bootReportChanged && tud_hid_n_ready(0)) {
-        tud_hid_n_report(0, REPORT_ID_KEYBOARD_BOOT,
+    if (bootReportChanged && tud_hid_n_ready(m_interfaceNum)) {
+        tud_hid_n_report(m_interfaceNum, REPORT_ID_KEYBOARD_BOOT,
                         &bootReport, sizeof(bootReport));
         bootReportChanged = false;
         return; // Only send one report per update
@@ -315,8 +300,8 @@ void TinyUsbKeyboardDevice::sendReports() {
     */
 
     // Send consumer control report if changed
-    if (consumerReportChanged && tud_hid_n_ready(0)) {
-        tud_hid_n_report(0, REPORT_ID_CONSUMER_CONTROL,
+    if (consumerReportChanged && tud_hid_n_ready(m_interfaceNum)) {
+        tud_hid_n_report(m_interfaceNum, REPORT_ID_CONSUMER_CONTROL,
                         consumerKeys, sizeof(consumerKeys));
         consumerReportChanged = false;
         return;

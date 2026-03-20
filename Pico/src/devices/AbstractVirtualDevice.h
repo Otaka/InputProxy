@@ -30,6 +30,9 @@ class AbstractVirtualDevice {
 public:
     virtual ~AbstractVirtualDevice() = default;
 
+    void setInterfaceNum(uint8_t n) { m_interfaceNum = n; }
+    uint8_t getInterfaceNum() const { return m_interfaceNum; }
+
     // Set axis value for a control code
     // code: control code (e.g., keycode for keyboard)
     // value: value in range [0...1000]
@@ -52,6 +55,9 @@ public:
     // Self-describing device identity (used by managers via plugDevice)
     virtual std::string getName() const = 0;
     virtual DeviceType getDeviceType() const = 0;
+
+protected:
+    uint8_t m_interfaceNum = 0;
 };
 
 #endif // ABSTRACT_VIRTUAL_DEVICE_H

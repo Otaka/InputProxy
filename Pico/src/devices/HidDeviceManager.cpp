@@ -98,6 +98,7 @@ bool HidDeviceManager::plugDeviceInternal(AbstractVirtualDevice* device) {
     info.deviceType = device->getDeviceType();
     info.occupied = true;
     allocateInterface(info, slotIndex);
+    device->setInterfaceNum(info.interfaceNum);
     return true;
 }
 
