@@ -50,7 +50,7 @@ TinyUsbGamepadDevice::TinyUsbGamepadDevice(const std::string& name, uint8_t game
     for (int i = 0; i < GAMEPAD_MAX_AXES; i++) {
         report.axes[i] = 127;
     }
-    // Hat centered (8 = center, within logical range [0,8])
+    // Hat centered (8 = out-of-range null state, logical range is 0-7)
     report.hat = 8;
 
     // Build the HID descriptor
@@ -171,8 +171,8 @@ void TinyUsbGamepadDevice::buildHidDescriptor() {
         *p++ = 0x09; *p++ = 0x39;
         // Logical Minimum (0)
         *p++ = 0x15; *p++ = 0x00;
-        // Logical Maximum (8) - 8 = center/released (within range, no null state needed)
-        *p++ = 0x25; *p++ = 0x08;
+        // Logical Maximum (7) - values 0-7 are directions; value 8 is out-of-range = null (center)
+        *p++ = 0x25; *p++ = 0x07;
         // Report Count (1)
         *p++ = 0x95; *p++ = 0x01;
         // Report Size (8)

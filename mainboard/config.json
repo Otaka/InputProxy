@@ -6,8 +6,10 @@
             "pid": 4,
             "manufacturer": "InputProxy",
             "product": "InputProxy Composite1",
-            "serial": "20260106",
+            "serial": "20260107",
             "devices": [
+                { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
+                { "id": "vmouse", "type": "mouse",     "name": "InputProxy Mouse" },
                 { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1", "buttons": 16, "axesmask": 15, "hat": true }
             ]
         }
@@ -39,7 +41,11 @@
                         { "from": "Stick LX-", "to": "Stick LX-" },
                         { "from": "Stick LX+", "to": "Stick LX+" },
                         { "from": "Stick LY-", "to": "Stick LY-" },
-                        { "from": "Stick LY+", "to": "Stick LY+" }
+                        { "from": "Stick LY+", "to": "Stick LY+" },
+                        { "from": "Hat Y-", "to": "Hat Up" },
+                        { "from": "Hat Y+", "to": "Hat Down" },
+                        { "from": "Hat X+", "to": "Hat Left" },
+                        { "from": "Hat X-", "to": "Hat Right" }
                     ]
                 },
                 {
