@@ -326,31 +326,27 @@ void MappingManager::onRealDeviceDisconnected(const std::string& deviceIdStr) {
 // Dispatch
 // ---------------------------------------------------------------------------
 
-void MappingManager::spawnActions(std::vector<std::unique_ptr<Action>>& actions) {
-    std::vector<Action*> ptrs;
-    for (auto& a : actions) ptrs.push_back(a.get());
-
-    coro([ptrs, this]() {
-        for (Action* act : ptrs) {
-            if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
-                int devIdx = edm->resolveId(ea->vodId);
-                if (devIdx != -1 && ea->axisIndex != -1)
-                    edm->setAxis(devIdx, ea->axisIndex, ea->value);
-            } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
-                int devIdx = edm->resolveId(osa->vodId);
-                for (const auto& step : osa->steps) {
-                    if (step.type == SequenceStep::Type::SetAxis) {
-                        if (devIdx != -1 && step.axisIndex != -1)
-                            edm->setAxis(devIdx, step.axisIndex, step.value);
-                    } else {
-                        sleep(step.timeMs);
-                    }
+void MappingManager::executeActions(std::vector<std::unique_ptr<Action>>& actions) {
+    for (auto& a : actions) {
+        Action* act = a.get();
+        if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
+            int devIdx = edm->resolveId(ea->vodId);
+            if (devIdx != -1 && ea->axisIndex != -1)
+                edm->setAxis(devIdx, ea->axisIndex, ea->value);
+        } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
+            int devIdx = edm->resolveId(osa->vodId);
+            for (const auto& step : osa->steps) {
+                if (step.type == SequenceStep::Type::SetAxis) {
+                    if (devIdx != -1 && step.axisIndex != -1)
+                        edm->setAxis(devIdx, step.axisIndex, step.value);
+                } else {
+                    sleep(step.timeMs);
                 }
-            } else if (auto* sa = dynamic_cast<SleepAction*>(act)) {
-                sleep(sa->timeMs);
             }
+        } else if (auto* sa = dynamic_cast<SleepAction*>(act)) {
+            sleep(sa->timeMs);
         }
-    });
+    }
 }
 
 void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
@@ -363,7 +359,7 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
             auto it = layer->pendingReleaseRules.find(key);
             if (it != layer->pendingReleaseRules.end()) {
                 for (auto* rule : it->second) {
-                    spawnActions(rule->releaseActions);
+                    executeActions(rule->releaseActions);
                     rule->reset();
                 }
                 layer->pendingReleaseRules.erase(it);
@@ -380,7 +376,7 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
                     toRemove.push_back(rule);
                 } else if (result == AxisRule::EventResult::Completed) {
                     toRemove.push_back(rule);
-                    spawnActions(rule->pressActions);
+                    executeActions(rule->pressActions);
                     if (!rule->releaseActions.empty()) {
                         const auto& lastPart = rule->hotkeyParts.back();
                         if (lastPart.activationAxis.has_value()) {
@@ -413,7 +409,7 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
                         layer->activeRules.push_back(rule);
                         if (!rule->propagate) consumed = true;
                     } else if (result == AxisRule::EventResult::Completed) {
-                        spawnActions(rule->pressActions);
+                        executeActions(rule->pressActions);
                         if (!rule->releaseActions.empty()) {
                             const auto& lastPart = rule->hotkeyParts.back();
                             if (lastPart.activationAxis.has_value()) {
