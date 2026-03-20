@@ -46,5 +46,5 @@ private:
     void resolveVidAxes();
     void resolveVodAxes();
     void dispatchVidAxisEvent(const std::string& vidId, int vidAxisIndex, int value);
-    void executeActions(std::vector<std::unique_ptr<Action>>& actions);
+    void executeActions(std::vector<std::unique_ptr<Action>>& actions, int value);
 };

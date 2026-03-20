@@ -12,7 +12,6 @@ struct EmitAxisAction : Action {
     std::string vodId;
     int         axisIndex = -1;  // resolved in phase 3
     std::string axisName;        // retained for resolution
-    int         value     =  0;
 };
 
 struct OutputSequenceAction : Action {

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <algorithm>
 #include <vector>
 
 using namespace corocgo;

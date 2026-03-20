@@ -11,13 +11,7 @@
                 { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
                 { "id": "vmouse", "type": "mouse",     "name": "InputProxy Mouse" },
                 { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1",
-                  "buttons": 16, "axesmask": 3, "hat": true },
-                { "id": "vgp2",   "type": "hidgamepad", "name": "InputProxy Gamepad 2",
-                  "buttons": 17, "axesmask": 3, "hat": true },
-                { "id": "vgp3",   "type": "hidgamepad", "name": "InputProxy Gamepad 3",
-                  "buttons": 18, "axesmask": 3, "hat": false },
-                { "id": "vgp4",   "type": "hidgamepad", "name": "InputProxy Gamepad 4",
-                  "buttons": 19, "axesmask": 3, "hat": false }
+                  "buttons": 16, "axesmask": 3, "hat": true }
             ]
         }
     ],
@@ -39,9 +33,16 @@
                 {
                     "type": "simple",
                     "vid": "vid1",
-                    "vod": "vkbd1",
+                    "vod": "vgp1",
                     "axes": [
-                        { "from": "Button 308", "to": "Button 1" }
+                        { "from": "Button 308", "to": "Button 1" },
+                        { "from": "Button 305", "to": "Button 2" },
+                        { "from": "Button 304", "to": "Button 3" },
+                        { "from": "Button 307", "to": "Button 4" },
+                        { "from": "Stick LX-", "to": "Stick LX-" },
+                        { "from": "Stick LX+", "to": "Stick LX+" },
+                        { "from": "Stick LY-", "to": "Stick LY-" },
+                        { "from": "Stick LY+", "to": "Stick LY+" }
                     ]
                 }
             ]
