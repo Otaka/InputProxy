@@ -26,6 +26,9 @@ public:
     // Config-time string-id to flat-index resolution. Returns -1 if not found.
     int resolveId(const std::string& id) const;
 
+    // Clear all registered devices (call before reloading config).
+    void clear();
+
     // For inspection (e.g., REST API)
     const std::vector<VirtualOutputDevice>& getDevices() const { return devices; }
 

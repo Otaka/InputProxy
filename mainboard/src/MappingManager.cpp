@@ -133,6 +133,15 @@ static std::vector<std::unique_ptr<Action>> parseActionList(const nlohmann::json
 // loadFromConfig
 // ---------------------------------------------------------------------------
 
+void MappingManager::clear() {
+    vids.clear();
+    realDeviceMappings.clear();
+    deviceAssignments.clear();
+    vidState.clear();
+    layerManager.allLayers.clear();
+    layerManager.activeStack.clear();
+}
+
 void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm_) {
     using json = nlohmann::json;
     edm = edm_;

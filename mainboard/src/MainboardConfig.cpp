@@ -11,7 +11,7 @@ nlohmann::json parseConfigFile(const std::string& path) {
     try {
         std::ifstream f(path);
         if (!f) { std::cerr << "[config] cannot open " << path << "\n"; return {}; }
-        return json::parse(f);
+        return json::parse(f, nullptr, true, true);
     } catch (const json::exception& e) {
         std::cerr << "[config] failed to parse " << path << ": " << e.what() << "\n";
         return {};

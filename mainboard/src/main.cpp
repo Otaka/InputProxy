@@ -246,6 +246,24 @@ bool initRpcSystem() {
 }
 
 // ---------------------------------------------------------------------------
+static std::string resolveAxisName(const std::string& deviceIdStr, int axisIndex) {
+    for(auto& [id, dev] : deviceManager->getDevices())
+        if(dev.deviceIdStr == deviceIdStr)
+            return dev.axes.getName(axisIndex);
+    return {};
+}
+
+void logRealDeviceEvent(AxisEvent&event) {
+    bool printEvent=true;
+    bool printAxisStringName=true;
+    if(printEvent){
+        std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex;
+        if(printAxisStringName){
+            std::cout<<"("<<resolveAxisName(event.deviceIdStr, event.axisIndex)<<")";
+        }
+        std::cout<<" value="<<event.value<<std::endl;
+    }
+}
 
 void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
@@ -295,7 +313,7 @@ void _main() {
     for (auto& link : uartLinks) {
         std::cout << "UART" << link.channel << ": sending reboot to Pico..." << std::endl;
         RpcArg* arg = link.rpcManager->getRpcArg();
-        link.rpcManager->call(M2P_REBOOT, arg);
+        link.rpcManager->callNoResponse(M2P_REBOOT, arg);
         link.rpcManager->disposeRpcArg(arg);
     }
 
@@ -331,14 +349,38 @@ void _main() {
         while (true) {
             auto [event, err] = axisEventChannel->receive();
             if (err) break;
-            std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex<<" value="<<event.value<<std::endl;
-            if (mappingManager) mappingManager->axisEvent(event.deviceIdStr, event.axisIndex, event.value);
+            logRealDeviceEvent(event);
+            if (mappingManager)
+                mappingManager->axisEvent(event.deviceIdStr, event.axisIndex, event.value);
         }
     });
 
     // 5. HTTP API server
+    auto reloadConfigFn = []() {
+        std::cout << "[config] reloading config.json..." << std::endl;
+        nlohmann::json configRoot = parseConfigFile("config.json");
+        boardConfigs = loadMainboardConfig(configRoot);
+
+        emulatedDeviceManager->clear();
+        mappingManager->clear();
+        mappingManager->loadFromConfig(configRoot, emulatedDeviceManager);
+
+        // Re-register currently connected real devices into fresh mapping state
+        for (auto& [id, dev] : deviceManager->getDevices())
+            if (dev.active)
+                mappingManager->onRealDeviceConnected(dev.deviceIdStr, dev);
+
+        // Reboot all Pico boards — they'll re-send onBoot and pick up new config
+        for (auto& link : uartLinks) {
+            RpcArg* arg = link.rpcManager->getRpcArg();
+            link.rpcManager->callNoResponse(M2P_REBOOT, arg);
+            link.rpcManager->disposeRpcArg(arg);
+        }
+        std::cout << "[config] reload complete" << std::endl;
+    };
+
     startRestApi(8080, deviceManager, &emulationBoards, emulatedDeviceManager,
-                 &mappingManager->getLayerManager());
+                 &mappingManager->getLayerManager(), reloadConfigFn);
 }
 
 int main() {

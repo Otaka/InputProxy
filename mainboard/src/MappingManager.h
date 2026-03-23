@@ -28,6 +28,7 @@ public:
     MappingManager() : edm(nullptr) {}
 
     void loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm);
+    void clear();
     void onBoardRegistered();
     void onRealDeviceConnected(const std::string& deviceIdStr, const RealDevice& device);
     void onRealDeviceDisconnected(const std::string& deviceIdStr);

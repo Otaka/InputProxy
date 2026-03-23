@@ -33,6 +33,11 @@ void EmulatedDeviceManager::setAxis(int deviceIndex, int axis, int value) {
     d.setAxis(axis, value);
 }
 
+void EmulatedDeviceManager::clear() {
+    devices.clear();
+    idToIndex.clear();
+}
+
 int EmulatedDeviceManager::resolveId(const std::string& id) const {
     auto it = idToIndex.find(id);
     return (it != idToIndex.end()) ? it->second : -1;

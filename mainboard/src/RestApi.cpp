@@ -7,6 +7,7 @@
 #include <sstream>
 #include <algorithm>
 #include <vector>
+#include <functional>
 
 using namespace corocgo;
 
@@ -81,8 +82,9 @@ static std::string picoDeviceTypeStr(PicoDeviceType t) {
 void startRestApi(int port, RealDeviceManager* deviceManager,
                   std::vector<EmulationBoard>* boards,
                   EmulatedDeviceManager* emulatedDeviceManager,
-                  LayerManager* layerManager) {
-    coro([port, deviceManager, boards, emulatedDeviceManager, layerManager]() {
+                  LayerManager* layerManager,
+                  std::function<void()> reloadConfigFn) {
+    coro([port, deviceManager, boards, emulatedDeviceManager, layerManager, reloadConfigFn]() {
         auto router = std::make_shared<CoHttpRouter>();
 
         // ---- /emulationboard/* ----
@@ -347,6 +349,14 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                     sendJson(session, 404, "{\"error\":\"layer not found\"}"); return;
                 }
                 layerManager->deactivate(it->second);
+                sendJson(session, 200, "{\"ok\":true}");
+            });
+
+        // ---- /config/* ----
+
+        router->endpoint("POST", "/config/reload",
+            [reloadConfigFn](coSession session, auto) {
+                reloadConfigFn();
                 sendJson(session, 200, "{\"ok\":true}");
             });
 
