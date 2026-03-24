@@ -41,7 +41,6 @@ private:
     std::map<std::string, VirtualInputDevice>     vids;
     std::map<std::string, RealDeviceToVidMapping> realDeviceMappings;
     std::map<std::string, std::string>            deviceAssignments;
-    std::map<std::string, std::map<std::string,std::string>> axisRenames;  // deviceIdStr -> (oldName -> newName)
     VidStateMap                                   vidState;
     LayerManager                                  layerManager;
 
