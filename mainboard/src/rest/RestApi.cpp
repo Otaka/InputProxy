@@ -1,5 +1,6 @@
 #include "RestApi.h"
 #include "CoHttpServer.h"
+#include "RealDeviceManager.h"
 #include "EmulatedDeviceManager.h"
 #include "PicoConfig.h"
 #include <iostream>

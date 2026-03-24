@@ -8,12 +8,79 @@
 #include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
-#include <linux/input.h>
 #include <cerrno>
 #include "corocgo/corocgo.h"
 
-// Helper to convert event type and code to string
-static std::string eventCodeToString(int type, int code) {
+// ---------------------------------------------------------------------------
+// LinuxInputManager
+// ---------------------------------------------------------------------------
+
+std::vector<std::string> LinuxInputManager::scanEventPaths() {
+    std::vector<std::string> result;
+    DIR* dir = opendir("/dev/input");
+    if (!dir) {
+        std::cerr << "[LinuxInputManager] Cannot open /dev/input" << std::endl;
+        return result;
+    }
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name = entry->d_name;
+        if (name.find("event") == 0)
+            result.push_back("/dev/input/" + name);
+    }
+    closedir(dir);
+    return result;
+}
+
+int LinuxInputManager::openFd(const std::string& path) {
+    int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
+    if (fd < 0)
+        fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+    return fd;
+}
+
+void LinuxInputManager::closeFd(int fd) {
+    if (fd >= 0)
+        close(fd);
+}
+
+bool LinuxInputManager::readDeviceId(int fd, struct input_id& outId) {
+    return ioctl(fd, EVIOCGID, &outId) >= 0;
+}
+
+bool LinuxInputManager::readDeviceName(int fd, char* buf, size_t size) {
+    return ioctl(fd, EVIOCGNAME(size), buf) >= 0;
+}
+
+bool LinuxInputManager::readEventBits(int fd, unsigned char* bits, size_t size) {
+    return ioctl(fd, EVIOCGBIT(0, size), bits) >= 0;
+}
+
+bool LinuxInputManager::readAbsBits(int fd, unsigned char* bits, size_t size) {
+    return ioctl(fd, EVIOCGBIT(EV_ABS, size), bits) >= 0;
+}
+
+bool LinuxInputManager::readRelBits(int fd, unsigned char* bits, size_t size) {
+    return ioctl(fd, EVIOCGBIT(EV_REL, size), bits) >= 0;
+}
+
+bool LinuxInputManager::readKeyBits(int fd, unsigned char* bits, size_t size) {
+    return ioctl(fd, EVIOCGBIT(EV_KEY, size), bits) >= 0;
+}
+
+bool LinuxInputManager::readAbsInfo(int fd, int code, struct input_absinfo& outInfo) {
+    return ioctl(fd, EVIOCGABS(code), &outInfo) >= 0;
+}
+
+ssize_t LinuxInputManager::readEvents(int fd, struct input_event* buf, size_t bufSize) {
+    return read(fd, buf, bufSize);
+}
+
+bool LinuxInputManager::writeEvent(int fd, const struct input_event& ev) {
+    return write(fd, &ev, sizeof(ev)) == static_cast<ssize_t>(sizeof(ev));
+}
+
+std::string LinuxInputManager::eventCodeToString(int type, int code) {
     static const std::map<int, std::string> absNames = {
         {ABS_X,      "Stick LX"}, {ABS_Y,      "Stick LY"}, {ABS_Z,      "Stick LZ"},
         {ABS_RX,     "Stick RX"}, {ABS_RY,     "Stick RY"}, {ABS_RZ,     "Stick RZ"},
@@ -36,6 +103,8 @@ static std::string eventCodeToString(int type, int code) {
 }
 
 // ---------------------------------------------------------------------------
+// RealDeviceManager
+// ---------------------------------------------------------------------------
 
 RealDeviceManager::RealDeviceManager(const std::vector<std::string>& duplicateSerialIds)
     : duplicateSerialIds(duplicateSerialIds)
@@ -49,40 +118,6 @@ RealDeviceManager::~RealDeviceManager() {
         closeDevice(const_cast<RealDevice&>(device));
     }
     deviceId2Device.clear();
-}
-
-// ---------------------------------------------------------------------------
-// scanDevices — returns devices that need a new reading coroutine
-// ---------------------------------------------------------------------------
-
-std::vector<std::string> RealDeviceManager::scanDevices() {
-    std::vector<std::string> result;
-
-    DIR* dir = opendir("/dev/input");
-    if (!dir) {
-        std::cerr << "[RealDeviceManager] Cannot open /dev/input directory" << std::endl;
-        return result;
-    }
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string name = entry->d_name;
-        if (name.find("event") != 0) continue;
-
-        std::string path = "/dev/input/" + name;
-
-        // Linear scan — find existing device at this path
-        RealDevice* existing = nullptr;
-        for (auto& [id, dev] : deviceId2Device) {
-            if (dev.evdevPath == path) { existing = &dev; break; }
-        }
-
-        // Include path if new or previously disconnected
-        if (!existing || !existing->active) result.push_back(path);
-    }
-    closedir(dir);
-
-    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,15 +140,15 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     }
 
     // New device — read metadata via a temporary fd
-    int fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+    int fd = linuxInput.openFd(path);
     if (fd < 0) return nullptr;
 
     struct input_id id;
-    if (ioctl(fd, EVIOCGID, &id) < 0) { close(fd); return nullptr; }
+    if (!linuxInput.readDeviceId(fd, id)) { linuxInput.closeFd(fd); return nullptr; }
 
     char name[256] = "Unknown";
-    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-    close(fd);
+    linuxInput.readDeviceName(fd, name, sizeof(name));
+    linuxInput.closeFd(fd);
 
     if (std::string(name).find("Motion") != std::string::npos) return nullptr;
 
@@ -163,20 +198,17 @@ std::string RealDeviceManager::generateDeviceKey(uint16_t vendor, uint16_t produ
 }
 
 bool RealDeviceManager::shouldUseFallbackId(const std::string baseId) const {
-    for(int i=0;i< duplicateSerialIds.size();i++){
-        if (duplicateSerialIds[i]==baseId)
+    for (int i = 0; i < (int)duplicateSerialIds.size(); i++) {
+        if (duplicateSerialIds[i] == baseId)
             return true;
     }
-
     return false;
 }
 
 // ---------------------------------------------------------------------------
 
 bool RealDeviceManager::openDevice(RealDevice& device) {
-    device.fd = open(device.evdevPath.c_str(), O_RDWR | O_NONBLOCK);
-    if (device.fd < 0)
-        device.fd = open(device.evdevPath.c_str(), O_RDONLY | O_NONBLOCK);
+    device.fd = linuxInput.openFd(device.evdevPath);
     if (device.fd < 0) {
         std::cerr << "[RealDeviceManager] Cannot open device: " << device.evdevPath
                   << " - " << strerror(errno) << std::endl;
@@ -184,7 +216,7 @@ bool RealDeviceManager::openDevice(RealDevice& device) {
     }
 
     if (!readDeviceCapabilities(device)) {
-        close(device.fd);
+        linuxInput.closeFd(device.fd);
         device.fd = -1;
         return false;
     }
@@ -194,7 +226,7 @@ bool RealDeviceManager::openDevice(RealDevice& device) {
 
 bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     unsigned char evBits[(EV_MAX + 7) / 8] = {0};
-    if (ioctl(device.fd, EVIOCGBIT(0, sizeof(evBits)), evBits) < 0) return false;
+    if (!linuxInput.readEventBits(device.fd, evBits, sizeof(evBits))) return false;
 
     auto testBit = [](int bit, const unsigned char* array) -> bool {
         return (array[bit / 8] & (1 << (bit % 8))) != 0;
@@ -203,14 +235,14 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     // Absolute axes
     if (testBit(EV_ABS, evBits)) {
         unsigned char absBits[(ABS_MAX + 7) / 8] = {0};
-        ioctl(device.fd, EVIOCGBIT(EV_ABS, sizeof(absBits)), absBits);
+        linuxInput.readAbsBits(device.fd, absBits, sizeof(absBits));
         for (int code = 0; code <= ABS_MAX; code++) {
             if (!testBit(code, absBits)) continue;
-            std::string axisName = eventCodeToString(EV_ABS, code);
+            std::string axisName = LinuxInputManager::eventCodeToString(EV_ABS, code);
             device.axes.addEntry(axisName, code);
 
             struct input_absinfo absInfo;
-            if (ioctl(device.fd, EVIOCGABS(code), &absInfo) >= 0) {
+            if (linuxInput.readAbsInfo(device.fd, code, absInfo)) {
                 AxisInfo info;
                 info.minimum      = absInfo.minimum;
                 info.maximum      = absInfo.maximum;
@@ -236,10 +268,10 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     // Relative axes
     if (testBit(EV_REL, evBits)) {
         unsigned char relBits[(REL_MAX + 7) / 8] = {0};
-        ioctl(device.fd, EVIOCGBIT(EV_REL, sizeof(relBits)), relBits);
+        linuxInput.readRelBits(device.fd, relBits, sizeof(relBits));
         for (int code = 0; code <= REL_MAX; code++) {
             if (!testBit(code, relBits)) continue;
-            std::string axisName = eventCodeToString(EV_REL, code);
+            std::string axisName = LinuxInputManager::eventCodeToString(EV_REL, code);
             device.axes.addEntry(axisName, code);
 
             AxisInfo info;
@@ -258,10 +290,10 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     // Buttons / keys
     if (testBit(EV_KEY, evBits)) {
         unsigned char keyBits[(KEY_MAX + 7) / 8] = {0};
-        ioctl(device.fd, EVIOCGBIT(EV_KEY, sizeof(keyBits)), keyBits);
+        linuxInput.readKeyBits(device.fd, keyBits, sizeof(keyBits));
         for (int code = 0; code <= KEY_MAX; code++) {
             if (!testBit(code, keyBits)) continue;
-            std::string axisName = eventCodeToString(EV_KEY, code);
+            std::string axisName = LinuxInputManager::eventCodeToString(EV_KEY, code);
             device.axes.addEntry(axisName, code);
 
             AxisInfo info;
@@ -301,10 +333,8 @@ void RealDeviceManager::applyAxisRenames(RealDevice& device) {
 }
 
 void RealDeviceManager::closeDevice(RealDevice& device) {
-    if (device.fd >= 0) {
-        close(device.fd);
-        device.fd = -1;
-    }
+    linuxInput.closeFd(device.fd);
+    device.fd = -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +343,7 @@ void RealDeviceManager::closeDevice(RealDevice& device) {
 
 bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<AxisEvent>* channel) {
     struct input_event events[64];
-    ssize_t bytesRead = read(device->fd, events, sizeof(events));
+    ssize_t bytesRead = linuxInput.readEvents(device->fd, events, sizeof(events));
 
     if (bytesRead < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) return true; // nothing yet
@@ -417,14 +447,17 @@ bool RealDeviceManager::sendEvent(unsigned int deviceId, int axisIndex, int valu
     ev.type  = EV_FF;
     ev.code  = static_cast<uint16_t>(axisIndex);
     ev.value = value;
-    if (write(device.fd, &ev, sizeof(ev)) < 0) {
+    if (!linuxInput.writeEvent(device.fd, ev)) {
         std::cerr << "[RealDeviceManager] Failed to write event to " << deviceId
                   << ": " << strerror(errno) << std::endl;
         return false;
     }
 
-    ev.type = EV_SYN; ev.code = SYN_REPORT; ev.value = 0;
-    write(device.fd, &ev, sizeof(ev));
+    struct input_event syn;
+    memset(&syn, 0, sizeof(syn));
+    gettimeofday(&syn.time, nullptr);
+    syn.type = EV_SYN; syn.code = SYN_REPORT; syn.value = 0;
+    linuxInput.writeEvent(device.fd, syn);
     return true;
 }
 

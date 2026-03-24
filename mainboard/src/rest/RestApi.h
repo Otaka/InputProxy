@@ -2,10 +2,11 @@
 
 #include <vector>
 #include <functional>
-#include "RealDeviceManager.h"
 #include "EmulationBoard.h"
 #include "EmulatedDeviceManager.h"
 #include "LayerManager.h"
+
+class RealDeviceManager;
 
 void startRestApi(int port,
                   RealDeviceManager* deviceManager,

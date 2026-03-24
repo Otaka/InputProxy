@@ -5,6 +5,8 @@
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include <sys/types.h>
+#include <linux/input.h>
 #include "../../shared/shared.h"
 #include "../../shared/corocgo/corocgo.h"
 #include "MainConfig.h"
@@ -63,6 +65,49 @@ struct RealDevice {
 };
 
 /**
+ * Thin wrapper around all Linux input subsystem calls (open/close/ioctl/read/write).
+ * Provides a single place for platform-specific I/O so RealDeviceManager stays
+ * free of raw system calls.
+ */
+class LinuxInputManager {
+public:
+    // Return paths of all /dev/input/event* files currently present
+    std::vector<std::string> scanEventPaths();
+
+    // Open an evdev node; tries R/W first, falls back to R/O. Returns fd or -1.
+    int openFd(const std::string& path);
+
+    // Close an evdev file descriptor
+    void closeFd(int fd);
+
+    // Read device identity (vendor/product/version/bustype) via EVIOCGID
+    bool readDeviceId(int fd, struct input_id& outId);
+
+    // Read human-readable device name via EVIOCGNAME
+    bool readDeviceName(int fd, char* buf, size_t size);
+
+    // Read the top-level event-type capability bitmask
+    bool readEventBits(int fd, unsigned char* bits, size_t size);
+
+    // Read per-type capability bitmasks
+    bool readAbsBits(int fd, unsigned char* bits, size_t size);
+    bool readRelBits(int fd, unsigned char* bits, size_t size);
+    bool readKeyBits(int fd, unsigned char* bits, size_t size);
+
+    // Read absolute axis limits/current value via EVIOCGABS
+    bool readAbsInfo(int fd, int code, struct input_absinfo& outInfo);
+
+    // Read a batch of input_event structs; returns bytes read (may be 0 / negative)
+    ssize_t readEvents(int fd, struct input_event* buf, size_t bufSize);
+
+    // Write a single input_event to the device fd
+    bool writeEvent(int fd, const struct input_event& ev);
+
+    // Convert (type, code) to a human-readable axis/button name
+    static std::string eventCodeToString(int type, int code);
+};
+
+/**
  * Manager for real physical USB input devices using evdev.
  * Uses coroutines for non-blocking device scanning and input reading.
  */
@@ -75,13 +120,6 @@ public:
     RealDeviceManager(const std::vector<std::string>& duplicateSerialIds);
 
     ~RealDeviceManager();
-
-    /**
-     * Scan /dev/input/event* and return paths that need processing:
-     * - Paths with no tracked device (new)
-     * - Paths whose tracked device is inactive (disconnected, path reappeared)
-     */
-    std::vector<std::string> scanDevices();
 
     /**
      * Open, read capabilities, and register (or reactivate) a device at the given path.
@@ -116,6 +154,9 @@ public:
      * Immediately re-applies renames to all already-registered devices.
      */
     void load(const std::vector<ConfRealDevice>& devices);
+
+    // Linux input abstraction — exposed so callers (e.g. main.cpp) can use it directly
+    LinuxInputManager linuxInput;
 
 public:
     std::map<unsigned int, RealDevice> deviceId2Device;   // numericId -> device

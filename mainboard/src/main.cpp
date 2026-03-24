@@ -321,8 +321,15 @@ void _main() {
     // 3. Device discovery coroutine — loops every 5 seconds
     coro([]() {
         while (true) {
-            auto paths = deviceManager->scanDevices();
-            for (auto& path : paths) {
+            auto allPaths = deviceManager->linuxInput.scanEventPaths();
+            for (auto& path : allPaths) {
+                // Skip paths whose device is already active
+                bool alreadyActive = false;
+                for (auto& [id, dev] : deviceManager->getDevices()) {
+                    if (dev.evdevPath == path && dev.active) { alreadyActive = true; break; }
+                }
+                if (alreadyActive) continue;
+
                 RealDevice* dev = deviceManager->registerDevice(path);
                 if (!dev) continue;
                 // Spawn one reading coroutine per device
