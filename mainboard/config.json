@@ -22,7 +22,12 @@
     ],
 
     "real_devices": [
-        { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1" },
+        { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1",
+          "rename_axes": {
+              "Stick LX-": "ArrowLeft",
+              "Stick LX+": "ArrowRight"
+          }
+        },
         { "id": "54c:9cc:33041:Sony Interactive Entertainment Wireless Controller:33", "assignedTo": "vid2" }
     ],
 

@@ -98,6 +98,7 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
         // Reactivate — reopen fd and re-read capabilities
         if (!openDevice(*existing)) return nullptr;
         existing->active = true;
+        applyAxisRenames(*existing);
         std::cout << "[RealDeviceManager] Device reactivated: "
                   << existing->deviceId << " (" << existing->deviceName << ")" << std::endl;
         return existing;
@@ -132,6 +133,7 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     int axisCount = static_cast<int>(device.axes.getEntries().size());
     device.deviceIdStr = generateDeviceKey(id.vendor, id.product, device.serial, path, name, axisCount);
     device.deviceId    = nextDeviceId++;
+    applyAxisRenames(device);
 
     unsigned int assignedId = device.deviceId;
     deviceId2Device[assignedId] = std::move(device);
@@ -186,6 +188,7 @@ bool RealDeviceManager::openDevice(RealDevice& device) {
         device.fd = -1;
         return false;
     }
+    device.originalAxes = device.axes;  // snapshot raw evdev names before any renames
     return true;
 }
 
@@ -269,6 +272,43 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     }
 
     return true;
+}
+
+void RealDeviceManager::loadFromConfig(const nlohmann::json& root) {
+    std::map<std::string, std::map<std::string,std::string>> allAxisRenames;
+    for (const auto& rd : root.value("real_devices", nlohmann::json::array())) {
+        auto idIt = rd.find("id");
+        if (idIt == rd.end() || !idIt->is_string()) continue;
+        std::string id = idIt->get<std::string>();
+
+        auto renameIt = rd.find("rename_axes");
+        if (renameIt == rd.end() || !renameIt->is_object()) continue;
+
+        std::map<std::string,std::string> renames;
+        for (auto it = renameIt->begin(); it != renameIt->end(); ++it)
+            if (it.value().is_string())
+                renames[it.key()] = it.value().get<std::string>();
+        if (!renames.empty())
+            allAxisRenames[id] = std::move(renames);
+    }
+    axisRenames = std::move(allAxisRenames);
+    for (auto& [id, device] : deviceId2Device)
+        applyAxisRenames(device);
+}
+
+void RealDeviceManager::applyAxisRenames(RealDevice& device) {
+    auto renameIt = axisRenames.find(device.deviceIdStr);
+    if (renameIt == axisRenames.end()) {
+        device.axes = device.originalAxes;
+        return;
+    }
+    const auto& renames = renameIt->second;
+    device.axes = AxisTable{};
+    for (const auto& entry : device.originalAxes.getEntries()) {
+        auto it = renames.find(entry.name);
+        const std::string& name = (it != renames.end()) ? it->second : entry.name;
+        device.axes.addEntry(name, entry.index);
+    }
 }
 
 void RealDeviceManager::closeDevice(RealDevice& device) {

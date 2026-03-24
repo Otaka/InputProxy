@@ -7,6 +7,7 @@
 #include <cstdint>
 #include "../../shared/shared.h"
 #include "../../shared/corocgo/corocgo.h"
+#include "json.hpp"
 
 // Structure to hold axis information (min, max, default values)
 struct AxisInfo {
@@ -35,6 +36,9 @@ struct RealDevice {
     bool active;                                    // false when disconnected
 
     // Bidirectional axis/button mappings (built dynamically from evdev capabilities)
+    // originalAxes: raw names straight from evdev, never modified after readDeviceCapabilities
+    // axes: current names — clone of originalAxes with any rename_axes overrides applied
+    AxisTable originalAxes;
     AxisTable axes;
 
     // Axis information (min/max/default values) - key is axis code
@@ -107,10 +111,17 @@ public:
      */
     const std::map<unsigned int, RealDevice>& getDevices() const { return deviceId2Device; }
 
+    /**
+     * Parse the real_devices section from config and extract axis rename overrides.
+     * Immediately re-applies renames to all already-registered devices.
+     */
+    void loadFromConfig(const nlohmann::json& root);
+
 public:
     std::map<unsigned int, RealDevice> deviceId2Device;   // numericId -> device
     std::vector<std::string> duplicateSerialIds;
     unsigned int nextDeviceId = 1;
+    std::map<std::string, std::map<std::string,std::string>> axisRenames; // deviceIdStr -> (old -> new)
 
     // Generate stable string key from device info — used for config matching
     std::string generateDeviceKey(uint16_t vendor, uint16_t product, const std::string& serial,
@@ -125,6 +136,9 @@ private:
 
     // Read device capabilities and populate axis mappings
     bool readDeviceCapabilities(RealDevice& device);
+
+    // Rebuild device.axes from device.originalAxes applying axisRenames for this device
+    void applyAxisRenames(RealDevice& device);
 
     // Close a device fd
     void closeDevice(RealDevice& device);

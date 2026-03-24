@@ -285,6 +285,29 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                 sendJson(session, 200, json.str());
             });
 
+        router->endpoint("GET", "/realdevices/detailed/{deviceId}/original-axes",
+            [deviceManager](coSession session, auto vars) {
+                unsigned int deviceId = 0;
+                try { deviceId = std::stoul(vars.at("deviceId")); }
+                catch (...) {
+                    sendJson(session, 400, "{\"error\":\"invalid deviceId\"}"); return;
+                }
+                RealDevice* dev = deviceManager->getDevice(deviceId);
+                if (!dev) { sendJson(session, 404, "{\"error\":\"device not found\"}"); return; }
+
+                std::ostringstream json;
+                json << "[";
+                bool first = true;
+                for (auto& entry : dev->originalAxes.getEntries()) {
+                    if (!first) json << ",";
+                    first = false;
+                    json << "{\"name\":\"" << jsonEscape(entry.name) << "\","
+                         << "\"index\":"   << entry.index            << "}";
+                }
+                json << "]";
+                sendJson(session, 200, json.str());
+            });
+
         // ---- /layers/* ----
 
         router->endpoint("GET", "/layers",

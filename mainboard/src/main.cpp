@@ -285,6 +285,7 @@ void _main() {
 
     std::vector<std::string> duplicateSerialIds = {};
     deviceManager = new RealDeviceManager(duplicateSerialIds);
+    deviceManager->loadFromConfig(configRoot);
 
     axisEventChannel = makeChannel<AxisEvent>(64);
 
@@ -363,6 +364,7 @@ void _main() {
 
         emulatedDeviceManager->clear();
         mappingManager->clear();
+        deviceManager->loadFromConfig(configRoot);
         mappingManager->loadFromConfig(configRoot, emulatedDeviceManager);
 
         // Re-register currently connected real devices into fresh mapping state
