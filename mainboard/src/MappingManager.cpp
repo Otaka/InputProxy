@@ -165,6 +165,17 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
             continue;
         }
         deviceAssignments[id] = assignedTo;
+
+        auto renameIt = rd.find("rename_axes");
+        if (renameIt != rd.end() && renameIt->is_object()) {
+            std::map<std::string,std::string> renames;
+            for (auto it = renameIt->begin(); it != renameIt->end(); ++it) {
+                if (it.value().is_string())
+                    renames[it.key()] = it.value().get<std::string>();
+            }
+            if (!renames.empty())
+                axisRenames[id] = std::move(renames);
+        }
     }
 
     for (const auto& lj : root.value("layers", json::array())) {
@@ -301,16 +312,30 @@ void MappingManager::onRealDeviceConnected(const std::string& deviceIdStr,
     const std::string& vidId = assignIt->second;
     VirtualInputDevice& vid  = vids.at(vidId);
 
+    const std::map<std::string,std::string>* renames = nullptr;
+    auto renameIt = axisRenames.find(deviceIdStr);
+    if (renameIt != axisRenames.end())
+        renames = &renameIt->second;
+
+    auto applyRename = [&](const std::string& name) -> const std::string& {
+        if (renames) {
+            auto it = renames->find(name);
+            if (it != renames->end()) return it->second;
+        }
+        return name;
+    };
+
     for (const auto& entry : device.axes.getEntries()) {
-        if (!vid.axisTable.hasName(entry.name))
-            vid.axisTable.addEntry(entry.name, entry.index);
+        const std::string& axisName = applyRename(entry.name);
+        if (!vid.axisTable.hasName(axisName))
+            vid.axisTable.addEntry(axisName, entry.index);
     }
 
     RealDeviceToVidMapping mapping;
     mapping.vid    = &vid;
     mapping.active = true;
     for (const auto& entry : device.axes.getEntries()) {
-        int vidAxisIndex = vid.axisTable.getIndex(entry.name);
+        int vidAxisIndex = vid.axisTable.getIndex(applyRename(entry.name));
         if (vidAxisIndex != -1)
             mapping.realToVidAxisIndex[entry.index] = vidAxisIndex;
     }
