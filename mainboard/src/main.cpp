@@ -12,7 +12,7 @@
 #include "RealDeviceManager.h"
 #include "EmulationBoard.h"
 #include "EmulatedDeviceManager.h"
-#include "MainboardConfig.h"
+#include "MainConfig.h"
 #include "MappingManager.h"
 
 using namespace corocrpc;
@@ -268,12 +268,12 @@ void logRealDeviceEvent(AxisEvent&event) {
 void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
 
-    nlohmann::json configRoot = parseConfigFile("config.json");
-    boardConfigs = loadMainboardConfig(configRoot);
+    loadConfig("config.json");
+    boardConfigs = buildBoardEntries(gConfig.emulationBoards);
     std::cout << "Loaded " << boardConfigs.size() << " emulation board config(s)" << std::endl;
     emulatedDeviceManager = new EmulatedDeviceManager();
     mappingManager = new MappingManager();
-    mappingManager->loadFromConfig(configRoot, emulatedDeviceManager);
+    mappingManager->load(gConfig, emulatedDeviceManager);
     // Reserve capacity so push_back never reallocates — EmulationBoard* pointers stored
     // in VirtualOutputDevice::board must remain stable for the process lifetime.
     emulationBoards.reserve(16);
@@ -285,7 +285,7 @@ void _main() {
 
     std::vector<std::string> duplicateSerialIds = {};
     deviceManager = new RealDeviceManager(duplicateSerialIds);
-    deviceManager->loadFromConfig(configRoot);
+    deviceManager->load(gConfig.realDevices);
 
     axisEventChannel = makeChannel<AxisEvent>(64);
 
@@ -359,13 +359,13 @@ void _main() {
     // 5. HTTP API server
     auto reloadConfigFn = []() {
         std::cout << "[config] reloading config.json..." << std::endl;
-        nlohmann::json configRoot = parseConfigFile("config.json");
-        boardConfigs = loadMainboardConfig(configRoot);
+        loadConfig("config.json");
+        boardConfigs = buildBoardEntries(gConfig.emulationBoards); // must refresh — read by onBoot handler
 
         emulatedDeviceManager->clear();
         mappingManager->clear();
-        deviceManager->loadFromConfig(configRoot);
-        mappingManager->loadFromConfig(configRoot, emulatedDeviceManager);
+        deviceManager->load(gConfig.realDevices);
+        mappingManager->load(gConfig, emulatedDeviceManager);
 
         // Re-register currently connected real devices into fresh mapping state
         for (auto& [id, dev] : deviceManager->getDevices())

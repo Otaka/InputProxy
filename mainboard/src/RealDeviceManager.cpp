@@ -274,22 +274,11 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     return true;
 }
 
-void RealDeviceManager::loadFromConfig(const nlohmann::json& root) {
+void RealDeviceManager::load(const std::vector<ConfRealDevice>& devices) {
     std::map<std::string, std::map<std::string,std::string>> allAxisRenames;
-    for (const auto& rd : root.value("real_devices", nlohmann::json::array())) {
-        auto idIt = rd.find("id");
-        if (idIt == rd.end() || !idIt->is_string()) continue;
-        std::string id = idIt->get<std::string>();
-
-        auto renameIt = rd.find("rename_axes");
-        if (renameIt == rd.end() || !renameIt->is_object()) continue;
-
-        std::map<std::string,std::string> renames;
-        for (auto it = renameIt->begin(); it != renameIt->end(); ++it)
-            if (it.value().is_string())
-                renames[it.key()] = it.value().get<std::string>();
-        if (!renames.empty())
-            allAxisRenames[id] = std::move(renames);
+    for (const auto& rd : devices) {
+        if (!rd.renameAxes.empty())
+            allAxisRenames[rd.id] = rd.renameAxes;
     }
     axisRenames = std::move(allAxisRenames);
     for (auto& [id, device] : deviceId2Device)

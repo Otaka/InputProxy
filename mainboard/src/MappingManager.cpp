@@ -9,17 +9,6 @@
 
 using namespace corocgo;
 
-static std::string jsonStr(const nlohmann::json& obj, const char* key) {
-    auto it = obj.find(key);
-    if (it == obj.end()) return "";
-    if (!it->is_string()) {
-        std::cerr << "[mapping] field '" << key << "' must be a string, got: "
-                  << it->dump() << "\n";
-        return "";
-    }
-    return it->get<std::string>();
-}
-
 // ---------------------------------------------------------------------------
 // Config parsing helpers
 // ---------------------------------------------------------------------------
@@ -98,35 +87,29 @@ static std::vector<HotkeyPart> parseHotkeyString(const std::string& hotkey,
     return parts;
 }
 
-static std::vector<std::unique_ptr<Action>> parseActionList(const nlohmann::json& arr) {
-    using json = nlohmann::json;
-    std::vector<std::unique_ptr<Action>> actions;
-    if (!arr.is_array()) return actions;
-
-    for (const auto& a : arr) {
-        std::string type = a.value("type", "");
-        if (type == "emit_axis") {
+static std::vector<std::unique_ptr<Action>> buildActions(const std::vector<ConfAction>& actions) {
+    std::vector<std::unique_ptr<Action>> result;
+    for (const auto& a : actions) {
+        if (a.type == ConfActionType::EmitAxis) {
             auto act       = std::make_unique<EmitAxisAction>();
-            act->vodId     = a.value("vod", "");
-            act->axisName  = a.value("axis", "");
+            act->vodId     = a.vod;
+            act->axisName  = a.axis;
             act->axisIndex = -1;
-            actions.push_back(std::move(act));
-        } else if (type == "output_sequence") {
+            result.push_back(std::move(act));
+        } else if (a.type == ConfActionType::OutputSequence) {
             auto act       = std::make_unique<OutputSequenceAction>();
-            act->vodId     = a.value("vod", "");
-            auto parsed    = parseOutputSequence(a.value("sequence", ""));
+            act->vodId     = a.vod;
+            auto parsed    = parseOutputSequence(a.sequence);
             act->steps     = std::move(parsed.steps);
             act->axisNames = std::move(parsed.axisNames);
-            actions.push_back(std::move(act));
-        } else if (type == "sleep") {
+            result.push_back(std::move(act));
+        } else if (a.type == ConfActionType::Sleep) {
             auto act    = std::make_unique<SleepAction>();
-            act->timeMs = a.value("time", 0);
-            actions.push_back(std::move(act));
-        } else {
-            std::cerr << "[mapping] unknown action type '" << type << "', skipping\n";
+            act->timeMs = a.timeMs;
+            result.push_back(std::move(act));
         }
     }
-    return actions;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,47 +125,40 @@ void MappingManager::clear() {
     layerManager.activeStack.clear();
 }
 
-void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm_) {
-    using json = nlohmann::json;
+void MappingManager::load(const ConfRoot& config, EmulatedDeviceManager* edm_) {
     edm = edm_;
 
-    for (const auto& v : root.value("virtual_input_devices", json::array())) {
-        std::string id   = jsonStr(v, "id");
-        std::string name = jsonStr(v, "name");
-        if (id.empty()) { std::cerr << "[mapping] VID missing id\n"; continue; }
+    for (const auto& v : config.vids) {
+        if (v.id.empty()) { std::cerr << "[mapping] VID missing id\n"; continue; }
         VirtualInputDevice vid;
-        vid.id   = id;
-        vid.name = name;
-        vids.emplace(id, std::move(vid));
+        vid.id   = v.id;
+        vid.name = v.name;
+        vids.emplace(v.id, std::move(vid));
     }
 
-    for (const auto& rd : root.value("real_devices", json::array())) {
-        std::string id         = jsonStr(rd, "id");
-        std::string assignedTo = jsonStr(rd, "assignedTo");
-        if (id.empty() || assignedTo.empty()) continue;
-        if (vids.find(assignedTo) == vids.end()) {
-            std::cerr << "[mapping] device '" << id << "' assigned to unknown VID '" << assignedTo << "'\n";
+    for (const auto& rd : config.realDevices) {
+        if (rd.id.empty() || rd.assignedTo.empty()) continue;
+        if (vids.find(rd.assignedTo) == vids.end()) {
+            std::cerr << "[mapping] device '" << rd.id
+                      << "' assigned to unknown VID '" << rd.assignedTo << "'\n";
             continue;
         }
-        deviceAssignments[id] = assignedTo;
+        deviceAssignments[rd.id] = rd.assignedTo;
     }
 
-    for (const auto& lj : root.value("layers", json::array())) {
+    for (const auto& lc : config.layers) {
         Layer layer;
-        layer.id   = jsonStr(lj, "id");
-        layer.name = jsonStr(lj, "name");
+        layer.id   = lc.id;
+        layer.name = lc.name;
         if (layer.id.empty()) { std::cerr << "[mapping] layer missing id\n"; continue; }
 
-        for (const auto& rj : lj.value("rules", json::array())) {
-            std::string type  = jsonStr(rj, "type");
-            std::string vidId = jsonStr(rj, "vid");
+        for (const auto& rc : lc.rules) {
+            std::string vidId = rc.vid;
 
-            if (type == "simple") {
-                std::string vodId = jsonStr(rj, "vod");
-                for (const auto& axj : rj.value("axes", json::array())) {
-                    std::string from = jsonStr(axj, "from");
-                    std::string to   = jsonStr(axj, "to");
-                    if (from.empty() || to.empty()) continue;
+            if (rc.type == ConfRuleType::Simple) {
+                std::string vodId = rc.vod;
+                for (const auto& ax : rc.axes) {
+                    if (ax.from.empty() || ax.to.empty()) continue;
 
                     AxisRule rule;
                     rule.propagate = true;
@@ -191,7 +167,7 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
                     HotkeyPart part;
                     VidAxisRef ref;
                     ref.vidId     = vidId;
-                    ref.axisName  = from;
+                    ref.axisName  = ax.from;
                     ref.axisIndex = -1;
                     part.activationAxis = ref;
                     part.involvedVids   = { vidId };
@@ -199,38 +175,29 @@ void MappingManager::loadFromConfig(const nlohmann::json& root, EmulatedDeviceMa
 
                     auto press = std::make_unique<EmitAxisAction>();
                     press->vodId    = vodId;
-                    press->axisName = to;
+                    press->axisName = ax.to;
                     rule.pressActions.push_back(std::move(press));
 
                     auto release = std::make_unique<EmitAxisAction>();
                     release->vodId    = vodId;
-                    release->axisName = to;
+                    release->axisName = ax.to;
                     rule.releaseActions.push_back(std::move(release));
 
                     layer.rules.push_back(std::move(rule));
                 }
-            } else if (type == "hotkey") {
-                std::string hotkeyStr = jsonStr(rj, "hotkey");
-                bool propagate = rj.value("propagate", false);
-
+            } else if (rc.type == ConfRuleType::Hotkey) {
                 AxisRule rule;
-                rule.propagate   = propagate;
-                rule.hotkeyParts = parseHotkeyString(hotkeyStr, vidId);
-
-                auto pressIt   = rj.find("press_action");
-                auto releaseIt = rj.find("release_action");
-                if (pressIt != rj.end())
-                    rule.pressActions   = parseActionList(*pressIt);
-                if (releaseIt != rj.end())
-                    rule.releaseActions = parseActionList(*releaseIt);
-
+                rule.propagate   = rc.propagate;
+                rule.hotkeyParts = parseHotkeyString(rc.hotkey, vidId);
+                rule.pressActions   = buildActions(rc.pressActions);
+                rule.releaseActions = buildActions(rc.releaseActions);
                 layer.rules.push_back(std::move(rule));
             } else {
-                std::cerr << "[mapping] unknown rule type '" << type << "'\n";
+                std::cerr << "[mapping] unknown rule type\n";
             }
         }
 
-        bool activeAtBoot = lj.value("active", true);
+        bool activeAtBoot = lc.active;
         layerManager.allLayers.push_back(std::move(layer));
         if (activeAtBoot)
             layerManager.activeStack.push_back(&layerManager.allLayers.back());

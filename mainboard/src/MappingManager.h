@@ -4,7 +4,7 @@
 #include <map>
 #include <unordered_map>
 #include "../../shared/shared.h"
-#include "json.hpp"
+#include "MainConfig.h"
 #include "VidStateMap.h"
 #include "LayerManager.h"
 
@@ -27,7 +27,7 @@ class MappingManager {
 public:
     MappingManager() : edm(nullptr) {}
 
-    void loadFromConfig(const nlohmann::json& root, EmulatedDeviceManager* edm);
+    void load(const ConfRoot& config, EmulatedDeviceManager* edm);
     void clear();
     void onBoardRegistered();
     void onRealDeviceConnected(const std::string& deviceIdStr, const RealDevice& device);

@@ -7,7 +7,7 @@
 #include <cstdint>
 #include "../../shared/shared.h"
 #include "../../shared/corocgo/corocgo.h"
-#include "json.hpp"
+#include "MainConfig.h"
 
 // Structure to hold axis information (min, max, default values)
 struct AxisInfo {
@@ -115,7 +115,7 @@ public:
      * Parse the real_devices section from config and extract axis rename overrides.
      * Immediately re-applies renames to all already-registered devices.
      */
-    void loadFromConfig(const nlohmann::json& root);
+    void load(const std::vector<ConfRealDevice>& devices);
 
 public:
     std::map<unsigned int, RealDevice> deviceId2Device;   // numericId -> device

@@ -15,7 +15,7 @@ add_executable(app
     src/RestApi.cpp
     src/EmulatedDeviceManager.cpp
     src/VirtualOutputDevice.cpp
-    src/MainboardConfig.cpp
+    src/MainConfig.cpp
     src/MappingManager.cpp
     src/OutputSequenceParser.cpp
     src/AxisRule.cpp
