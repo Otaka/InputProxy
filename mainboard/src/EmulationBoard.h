@@ -3,7 +3,7 @@
 #include <string>
 #include <cstdint>
 #include "UartManager.h"
-#include "rpcinterface.h"
+#include "../shared/rpcinterface.h"
 #include "../shared/shared.h"
 #include "../shared/PicoConfig.h"
 #include "../shared/crc32.h"

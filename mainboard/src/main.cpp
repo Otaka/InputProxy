@@ -1,19 +1,19 @@
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
-#include "CoHttpServer.h"
-#include "RestApi.h"
+#include "rest/CoHttpServer.h"
+#include "rest/RestApi.h"
 #include "../shared/shared.h"
 #include "../shared/PicoConfig.h"
 #include "../shared/crc32.h"
 #include "corocrpc/corocrpc.h"
-#include "rpcinterface.h"
+#include "../shared/rpcinterface.h"
 #include "UartManager.h"
 #include "RealDeviceManager.h"
 #include "EmulationBoard.h"
 #include "EmulatedDeviceManager.h"
 #include "MainConfig.h"
-#include "MappingManager.h"
+#include "mapping/MappingManager.h"
 
 using namespace corocrpc;
 using namespace corocgo;

@@ -11,13 +11,13 @@ add_executable(app
     ../shared/PicoConfig.cpp
     src/main.cpp
     src/RealDeviceManager.cpp
-    src/CoHttpServer.cpp
-    src/RestApi.cpp
+    src/rest/CoHttpServer.cpp
+    src/rest/RestApi.cpp
     src/EmulatedDeviceManager.cpp
     src/VirtualOutputDevice.cpp
     src/MainConfig.cpp
-    src/MappingManager.cpp
-    src/OutputSequenceParser.cpp
-    src/AxisRule.cpp
-    src/LayerManager.cpp
+    src/mapping/MappingManager.cpp
+    src/mapping/OutputSequenceParser.cpp
+    src/mapping/AxisRule.cpp
+    src/mapping/LayerManager.cpp
 )
