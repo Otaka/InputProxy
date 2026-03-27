@@ -1,0 +1,7 @@
+let's plan the ui for our mainboard sub project.
+What I want to have - preact application that will be built with standard webpack workflow, and then somehow included in our mainboard c++ application and will be served by RestApi.cpp http server. Ui page should looks like the following:
+We have main page - Input Proxy Dashboard
+Dashboard splits the page on 3 vertical zones. From left to right: real devices, Virtual Input Devices, and Virtual Output Devices.
+Real Devices section - vertically scrollable area with real devices panels.(There is rest api to get this info from api). If device is not active - it is grey. Inactive device has button "Delete". Panel contains name, pid, vid...name of the device, Also there is button "Axes" that opens modal with axes table of real device, user can type new device name in input field. 
+Real device Axis Table - axes table with 3 column(Axis Index,Name, Overriden Name). overriden name has input boxes in each row and user can type new axis name.
+"Virtual Input Devices" section - vertically scrollable section that contains panels with information about V.I.D. device. This panel contains name of V.I.D. device and at bottom list of assigned real devices(this list just label with name of real device and cross to delete it, and button Assign that shows small modal dialog with list of real devices that user can select) to assign real device to this V.I.D.
