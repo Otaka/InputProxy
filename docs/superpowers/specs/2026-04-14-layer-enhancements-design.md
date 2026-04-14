@@ -28,7 +28,7 @@ Layers are processed in the order they appear in the `layers[]` array. **Index 0
 
 ### 1. `block`
 
-Suppresses one or more VID axes and holds them at a fixed value. Consumes the event — no lower-priority rule will see it.
+Suppresses one or more VID axes and holds them at a fixed value. Consumes the event — no lower-priority rule will see it. If the rule has "value" <>0 for some axis and then we disable the layer - rule sends value "0" to "unpress" the axis.
 
 ```json
 {
@@ -85,7 +85,7 @@ Declares the state of a virtual output device. When multiple active layers decla
 
 ### 3. `turbo`
 
-Auto-toggles a VID axis between `max_value` and `min_value` at a configurable rate. Operates at the VID level — the toggled value is then forwarded by whatever `simple` or `hotkey` rules exist for that axis. No `vod` or `to` field needed.
+Auto-toggles a VID axis between `max_value` and `min_value` at a configurable rate. Operates at the VID level — the toggled value is then forwarded by whatever `simple` or `hotkey` rules exist for that axis. No `vod` or `to` field needed. disabling layer/rule in any phase of cycling toggle should set min_value for the axis to "unpress" it.
 
 ```json
 {
