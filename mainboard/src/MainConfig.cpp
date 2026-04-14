@@ -166,15 +166,47 @@ static std::vector<ConfAction> parseActionArray(const json& j, std::vector<std::
 static ConfRule confRuleFromJson(const json& j, std::vector<std::string>& errors) {
     ConfRule r;
     std::string typeStr = j.value("type", "");
-    if (typeStr == "hotkey")       r.type = ConfRuleType::Hotkey;
-    else if (typeStr == "simple")  r.type = ConfRuleType::Simple;
-    else                           errors.push_back("unknown rule type: \"" + typeStr + "\"");
+    if (typeStr == "hotkey") {
+        r.type = ConfRuleType::Hotkey;
+    } else if (typeStr == "simple") {
+        r.type = ConfRuleType::Simple;
+    } else if (typeStr == "block") {
+        r.type = ConfRuleType::Block;
+        for (const auto& ax : j.value("axes", json::array())) {
+            ConfBlockAxis ba;
+            ba.axis  = ax.value("axis", "");
+            ba.value = ax.value("value", 0);
+            if (!ba.axis.empty()) r.blockAxes.push_back(ba);
+        }
+    } else if (typeStr == "vod_state") {
+        r.type = ConfRuleType::VodState;
+        std::string stateStr = j.value("state", "active");
+        if      (stateStr == "silenced")     r.vodState = ConfVodState::Silenced;
+        else if (stateStr == "disconnected") r.vodState = ConfVodState::Disconnected;
+        else                                 r.vodState = ConfVodState::Active;
+    } else if (typeStr == "turbo") {
+        r.type = ConfRuleType::Turbo;
+        r.turboAxis         = j.value("axis", "");
+        r.turboOnMs         = j.value("on_ms", 100);
+        r.turboOffMs        = j.value("off_ms", 100);
+        r.turboInitialDelay = j.value("initial_delay_ms", 0);
+        r.turboMaxValue     = j.value("max_value", 1000);
+        r.turboMinValue     = j.value("min_value", 0);
+        std::string cond    = j.value("condition", "while_axis_active");
+        r.turboCondition    = (cond == "always")
+                            ? ConfTurboCondition::Always
+                            : ConfTurboCondition::WhileAxisActive;
+    } else {
+        errors.push_back("unknown rule type: \"" + typeStr + "\"");
+    }
     r.vid       = j.value("vid", "");
     r.vod       = j.value("vod", "");
     r.hotkey    = j.value("hotkey", "");
     r.propagate = j.value("propagate", false);
-    for (const auto& a : j.value("axes", json::array()))
-        r.axes.push_back(confAxisEntryFromJson(a));
+    if (r.type == ConfRuleType::Simple) {
+        for (const auto& a : j.value("axes", json::array()))
+            r.axes.push_back(confAxisEntryFromJson(a));
+    }
     auto pressIt   = j.find("press_action");
     auto releaseIt = j.find("release_action");
     if (pressIt   != j.end()) r.pressActions   = parseActionArray(*pressIt,   errors);
@@ -208,6 +240,17 @@ static ConfLayer confLayerFromJson(const json& j, std::vector<std::string>& erro
     l.active = j.value("active", true);
     for (const auto& r : j.value("rules", json::array()))
         l.rules.push_back(confRuleFromJson(r, errors));
+    auto actIt = j.find("activation");
+    if (actIt != j.end()) {
+        ConfActivation act;
+        std::string modeStr = actIt->value("mode", "toggle");
+        if      (modeStr == "while_active")     act.mode = ConfActivationMode::WhileActive;
+        else if (modeStr == "while_not_active") act.mode = ConfActivationMode::WhileNotActive;
+        else                                    act.mode = ConfActivationMode::Toggle;
+        act.vid    = actIt->value("vid", "");
+        act.hotkey = actIt->value("hotkey", "");
+        l.activation = act;
+    }
     return l;
 }
 

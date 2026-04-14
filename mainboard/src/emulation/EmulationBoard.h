@@ -81,6 +81,13 @@ public:
         rpc->disposeRpcArg(arg);
     }
 
+    void setUsbConnected(bool connected) {
+        corocrpc::RpcArg* arg = rpc->getRpcArg();
+        arg->putBool(connected);
+        rpc->callNoResponse(M2P_SET_USB_CONNECTED, arg);
+        rpc->disposeRpcArg(arg);
+    }
+
     // Sends M2P_SET_CONFIGURATION. Returns true if Pico accepted (will reboot).
     // Returns false with errorMsg populated if Pico rejected.
     bool setConfiguration(const std::string& configJson, std::string& errorMsg) {

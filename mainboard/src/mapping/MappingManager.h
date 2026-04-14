@@ -2,11 +2,14 @@
 #pragma once
 #include <string>
 #include <map>
+#include <set>
+#include <memory>
 #include <unordered_map>
 #include "../../shared/shared.h"
 #include "../MainConfig.h"
 #include "VidStateMap.h"
 #include "LayerManager.h"
+#include "TurboRule.h"
 
 class EmulatedDeviceManager;
 struct RealDevice;
@@ -21,6 +24,14 @@ struct RealDeviceToVidMapping {
     VirtualInputDevice*         vid;
     std::unordered_map<int,int> realToVidAxisIndex;
     bool                        active = false;
+};
+
+struct TurboKey {
+    std::string vidId;
+    int         axisIndex;
+    bool operator<(const TurboKey& o) const {
+        return vidId < o.vidId || (vidId == o.vidId && axisIndex < o.axisIndex);
+    }
 };
 
 class MappingManager {
@@ -44,8 +55,18 @@ private:
     VidStateMap                                   vidState;
     LayerManager                                  layerManager;
 
+    // Turbo state
+    std::map<TurboKey, std::shared_ptr<bool>>     activeTurbos;
+
+    // USB disconnect tracking: board serial IDs currently disconnected
+    std::set<std::string>                         usbDisconnectedBoards;
+
     void resolveVidAxes();
     void resolveVodAxes();
     void dispatchVidAxisEvent(const std::string& vidId, int vidAxisIndex, int value);
     void executeActions(std::vector<std::unique_ptr<Action>>& actions, int value);
+    void evaluateVodStates();
+    void startTurbo(const TurboRule& rule);
+    void stopTurbo(const std::string& vidId, int axisIndex);
+    void stopAllTurbosForLayer(Layer* layer);
 };

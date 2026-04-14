@@ -2,6 +2,7 @@
 #pragma once
 #include <vector>
 #include <map>
+#include <set>
 #include <string>
 #include "VirtualOutputDevice.h"
 
@@ -23,6 +24,10 @@ public:
     // Runtime axis dispatch. Silently drops if device out of range or board inactive.
     void setAxis(int deviceIndex, int axis, int value);
 
+    // Silence a VOD: while silenced, setAxis calls are dropped.
+    void setSilenced(const std::string& vodId, bool silenced);
+    bool isSilenced(const std::string& vodId) const;
+
     // Config-time string-id to flat-index resolution. Returns -1 if not found.
     int resolveId(const std::string& id) const;
 
@@ -35,4 +40,5 @@ public:
 private:
     std::vector<VirtualOutputDevice> devices;
     std::map<std::string, int>       idToIndex;
+    std::set<std::string>            silencedVods;
 };

@@ -30,12 +30,23 @@ void EmulatedDeviceManager::setAxis(int deviceIndex, int axis, int value) {
     if (deviceIndex < 0 || deviceIndex >= (int)devices.size()) return;
     auto& d = devices[deviceIndex];
     if (d.board == nullptr || !d.board->active) return;
+    if (silencedVods.count(d.id) > 0) return;
     d.setAxis(axis, value);
+}
+
+void EmulatedDeviceManager::setSilenced(const std::string& vodId, bool silenced) {
+    if (silenced) silencedVods.insert(vodId);
+    else          silencedVods.erase(vodId);
+}
+
+bool EmulatedDeviceManager::isSilenced(const std::string& vodId) const {
+    return silencedVods.count(vodId) > 0;
 }
 
 void EmulatedDeviceManager::clear() {
     devices.clear();
     idToIndex.clear();
+    silencedVods.clear();
 }
 
 int EmulatedDeviceManager::resolveId(const std::string& id) const {

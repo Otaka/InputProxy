@@ -1,6 +1,7 @@
 // mainboard/src/MappingManager.cpp
 #include "MappingManager.h"
 #include "EmulatedDeviceManager.h"
+#include "EmulationBoard.h"
 #include "RealDeviceManager.h"
 #include "OutputSequenceParser.h"
 #include "corocgo/corocgo.h"
@@ -117,6 +118,10 @@ static std::vector<std::unique_ptr<Action>> buildActions(const std::vector<ConfA
 // ---------------------------------------------------------------------------
 
 void MappingManager::clear() {
+    // Stop all turbos before clearing
+    for (auto& [key, running] : activeTurbos) *running = false;
+    activeTurbos.clear();
+    usbDisconnectedBoards.clear();
     vids.clear();
     realDeviceMappings.clear();
     deviceAssignments.clear();
@@ -192,8 +197,57 @@ void MappingManager::load(const ConfRoot& config, EmulatedDeviceManager* edm_) {
                 rule.pressActions   = buildActions(rc.pressActions);
                 rule.releaseActions = buildActions(rc.releaseActions);
                 layer.rules.push_back(std::move(rule));
+
+            } else if (rc.type == ConfRuleType::Block) {
+                BlockRule br;
+                br.vidId = vidId;
+                for (const auto& ba : rc.blockAxes) {
+                    BlockEntry e;
+                    e.axisName = ba.axis;
+                    e.value    = ba.value;
+                    br.entries.push_back(e);
+                }
+                layer.blockRules.push_back(std::move(br));
+
+            } else if (rc.type == ConfRuleType::VodState) {
+                VodStateRule vsr;
+                vsr.vodId = rc.vod;
+                switch (rc.vodState) {
+                    case ConfVodState::Silenced:     vsr.state = VodState::Silenced;     break;
+                    case ConfVodState::Disconnected: vsr.state = VodState::Disconnected; break;
+                    default:                         vsr.state = VodState::Active;        break;
+                }
+                layer.vodStateRules.push_back(vsr);
+
+            } else if (rc.type == ConfRuleType::Turbo) {
+                TurboRule tr;
+                tr.vidId        = vidId;
+                tr.axisName     = rc.turboAxis;
+                tr.onMs         = rc.turboOnMs;
+                tr.offMs        = rc.turboOffMs;
+                tr.initialDelay = rc.turboInitialDelay;
+                tr.maxValue     = rc.turboMaxValue;
+                tr.minValue     = rc.turboMinValue;
+                tr.condition    = (rc.turboCondition == ConfTurboCondition::Always)
+                                ? TurboCondition::Always
+                                : TurboCondition::WhileAxisActive;
+                layer.turboRules.push_back(tr);
+
             } else {
                 std::cerr << "[mapping] unknown rule type\n";
+            }
+        }
+
+        // Copy activation config and build activation rule
+        layer.activation = lc.activation;
+        if (lc.activation.has_value()) {
+            const ConfActivation& act = lc.activation.value();
+            if (!act.hotkey.empty() && !act.vid.empty()) {
+                auto rule = std::make_unique<AxisRule>();
+                rule->propagate  = false;
+                rule->exclusive  = true;
+                rule->hotkeyParts = parseHotkeyString(act.hotkey, act.vid);
+                layer.activationRule = std::move(rule);
             }
         }
 
@@ -202,6 +256,37 @@ void MappingManager::load(const ConfRoot& config, EmulatedDeviceManager* edm_) {
         if (activeAtBoot)
             layerManager.activeStack.push_back(&layerManager.allLayers.back());
     }
+
+    // Wire layer callbacks
+    layerManager.onActivate = [this](Layer* layer) {
+        evaluateVodStates();
+        for (auto& tr : layer->turboRules) {
+            if (tr.condition == TurboCondition::Always)
+                startTurbo(tr);
+        }
+    };
+
+    layerManager.onDeactivate = [this](Layer* layer) {
+        for (auto& br : layer->blockRules) {
+            for (auto& e : br.entries) {
+                if (e.axisIndex == -1 || e.value == 0) continue;
+                vidState[br.vidId][e.axisIndex] = 0;
+                dispatchVidAxisEvent(br.vidId, e.axisIndex, 0);
+            }
+        }
+        stopAllTurbosForLayer(layer);
+        evaluateVodStates();
+    };
+
+    // Start always-turbos for layers active at boot
+    for (Layer* layer : layerManager.activeStack) {
+        for (auto& tr : layer->turboRules) {
+            if (tr.condition == TurboCondition::Always)
+                startTurbo(tr);
+        }
+    }
+
+    evaluateVodStates();
 
     std::cout << "[mapping] loaded " << layerManager.allLayers.size() << " layer(s)\n";
 }
@@ -225,6 +310,38 @@ void MappingManager::resolveVidAxes() {
             }
         }
         layer.rebuildActivationIndex();
+
+        // Resolve BlockRule axis indices
+        for (auto& br : layer.blockRules) {
+            auto vidIt = vids.find(br.vidId);
+            if (vidIt == vids.end()) continue;
+            for (auto& e : br.entries) {
+                if (e.axisIndex == -1 && !e.axisName.empty())
+                    e.axisIndex = vidIt->second.axisTable.getIndex(e.axisName);
+            }
+        }
+
+        // Resolve TurboRule axis indices
+        for (auto& tr : layer.turboRules) {
+            auto vidIt = vids.find(tr.vidId);
+            if (vidIt == vids.end()) continue;
+            if (tr.axisIndex == -1 && !tr.axisName.empty())
+                tr.axisIndex = vidIt->second.axisTable.getIndex(tr.axisName);
+        }
+
+        // Resolve activation rule axis indices
+        if (layer.activationRule) {
+            for (auto& part : layer.activationRule->hotkeyParts) {
+                auto resolveRef = [&](VidAxisRef& ref) {
+                    if (ref.axisIndex != -1 || ref.axisName.empty()) return;
+                    auto vidIt = vids.find(ref.vidId);
+                    if (vidIt == vids.end()) return;
+                    ref.axisIndex = vidIt->second.axisTable.getIndex(ref.axisName);
+                };
+                for (auto& mod : part.modifiers) resolveRef(mod);
+                if (part.activationAxis) resolveRef(part.activationAxis.value());
+            }
+        }
     }
 }
 
@@ -331,7 +448,37 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
     for (Layer* layer : layerManager.stack()) {
         bool consumed = false;
 
+        // --- Block rule check ---
+        {
+            bool blocked   = false;
+            int  blockValue = value;
+            for (auto& br : layer->blockRules) {
+                if (br.vidId != vidId) continue;
+                for (const auto& e : br.entries) {
+                    if (e.axisIndex == vidAxisIndex) {
+                        blockValue = e.value;
+                        blocked    = true;
+                        break;
+                    }
+                }
+                if (blocked) break;
+            }
+            if (blocked) {
+                vidState[vidId][vidAxisIndex] = blockValue;
+                break;  // consumed — exit the layer stack loop
+            }
+        }
+
         if (value == 0) {
+            // Stop turbo on release (for WhileAxisActive turbos)
+            for (auto& tr : layer->turboRules) {
+                if (tr.vidId == vidId && tr.axisIndex == vidAxisIndex &&
+                    tr.condition == TurboCondition::WhileAxisActive) {
+                    stopTurbo(vidId, vidAxisIndex);
+                    break;
+                }
+            }
+
             VidAxisKey key { vidId, vidAxisIndex };
             auto it = layer->pendingReleaseRules.find(key);
             if (it != layer->pendingReleaseRules.end()) {
@@ -342,6 +489,20 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
                 layer->pendingReleaseRules.erase(it);
             }
             continue;
+        }
+
+        // --- Turbo rule check (press only) ---
+        {
+            bool turboConsumed = false;
+            for (auto& tr : layer->turboRules) {
+                if (tr.vidId != vidId || tr.axisIndex != vidAxisIndex) continue;
+                if (tr.condition == TurboCondition::WhileAxisActive) {
+                    startTurbo(tr);
+                    turboConsumed = true;
+                }
+                break;  // at most one turbo rule per axis per layer
+            }
+            if (turboConsumed) break;
         }
 
         // Press: process active rules first
@@ -407,6 +568,158 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
         }
 
         if (consumed) break;
+    }
+
+    // --- Activation trigger evaluation (all layers, regardless of active state) ---
+    for (auto& layer : layerManager.allLayers) {
+        if (!layer.activationRule || !layer.activation.has_value()) continue;
+        const ConfActivation& act = layer.activation.value();
+        AxisRule* rule = layer.activationRule.get();
+
+        if (act.mode == ConfActivationMode::WhileActive) {
+            if (value > 0) {
+                auto result = rule->tryActivateFirstStep(vidId, vidAxisIndex, vidState);
+                if (result == AxisRule::EventResult::Completed) {
+                    rule->state = AxisRule::State::WaitingForRelease;
+                    layerManager.activate(layer.id);
+                } else if (result == AxisRule::EventResult::Advanced) {
+                    rule->state = AxisRule::State::InProgress;
+                }
+            } else {
+                if (rule->state == AxisRule::State::WaitingForRelease) {
+                    // Check if the released axis is the last activation axis
+                    const auto& lastPart = rule->hotkeyParts.back();
+                    if (lastPart.activationAxis.has_value() &&
+                        lastPart.activationAxis->vidId == vidId &&
+                        lastPart.activationAxis->axisIndex == vidAxisIndex) {
+                        rule->reset();
+                        layerManager.deactivate(layer.id);
+                    }
+                }
+            }
+        } else if (act.mode == ConfActivationMode::WhileNotActive) {
+            if (value > 0) {
+                auto result = rule->tryActivateFirstStep(vidId, vidAxisIndex, vidState);
+                if (result == AxisRule::EventResult::Completed) {
+                    rule->state = AxisRule::State::WaitingForRelease;
+                    layerManager.deactivate(layer.id);
+                } else if (result == AxisRule::EventResult::Advanced) {
+                    rule->state = AxisRule::State::InProgress;
+                }
+            } else {
+                if (rule->state == AxisRule::State::WaitingForRelease) {
+                    const auto& lastPart = rule->hotkeyParts.back();
+                    if (lastPart.activationAxis.has_value() &&
+                        lastPart.activationAxis->vidId == vidId &&
+                        lastPart.activationAxis->axisIndex == vidAxisIndex) {
+                        rule->reset();
+                        layerManager.activate(layer.id);
+                    }
+                }
+            }
+        } else if (act.mode == ConfActivationMode::Toggle) {
+            if (value > 0) {
+                auto result = rule->tryActivateFirstStep(vidId, vidAxisIndex, vidState);
+                if (result == AxisRule::EventResult::Completed) {
+                    rule->reset();
+                    layer.toggleState = !layer.toggleState;
+                    if (layer.toggleState) layerManager.activate(layer.id);
+                    else                   layerManager.deactivate(layer.id);
+                } else if (result == AxisRule::EventResult::Advanced) {
+                    rule->state = AxisRule::State::InProgress;
+                }
+            }
+        }
+    }
+}
+
+void MappingManager::evaluateVodStates() {
+    const auto& devices = edm->getDevices();
+    for (const auto& dev : devices) {
+        const std::string& vodId = dev.id;
+        VodState effectiveState  = VodState::Active;
+
+        for (Layer* layer : layerManager.stack()) {
+            bool found = false;
+            for (const auto& vsr : layer->vodStateRules) {
+                if (vsr.vodId == vodId) {
+                    effectiveState = vsr.state;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+
+        edm->setSilenced(vodId, effectiveState == VodState::Silenced);
+
+        // Handle disconnect state
+        if (dev.board == nullptr) continue;
+        bool shouldDisconnect = (effectiveState == VodState::Disconnected);
+        bool wasDisconnected  = usbDisconnectedBoards.count(dev.board->serialString) > 0;
+        if (shouldDisconnect != wasDisconnected) {
+            if (shouldDisconnect) {
+                usbDisconnectedBoards.insert(dev.board->serialString);
+                dev.board->setUsbConnected(false);
+            } else {
+                usbDisconnectedBoards.erase(dev.board->serialString);
+                dev.board->setUsbConnected(true);
+            }
+        }
+    }
+}
+
+void MappingManager::startTurbo(const TurboRule& rule) {
+    if (rule.axisIndex == -1) return;
+    TurboKey key { rule.vidId, rule.axisIndex };
+    if (activeTurbos.count(key)) return;  // already running
+
+    auto running = std::make_shared<bool>(true);
+    activeTurbos[key] = running;
+
+    std::string vidId     = rule.vidId;
+    int         axisIdx   = rule.axisIndex;
+    int         onMs      = rule.onMs;
+    int         offMs     = rule.offMs;
+    int         initDelay = rule.initialDelay;
+    int         maxVal    = rule.maxValue;
+    int         minVal    = rule.minValue;
+
+    coro([this, running, vidId, axisIdx, onMs, offMs, initDelay, maxVal, minVal]() {
+        if (initDelay > 0) {
+            sleep(initDelay);
+            if (!*running) {
+                vidState[vidId][axisIdx] = minVal;
+                dispatchVidAxisEvent(vidId, axisIdx, minVal);
+                return;
+            }
+        }
+        while (*running) {
+            vidState[vidId][axisIdx] = maxVal;
+            dispatchVidAxisEvent(vidId, axisIdx, maxVal);
+            sleep(onMs);
+            if (!*running) break;
+            vidState[vidId][axisIdx] = minVal;
+            dispatchVidAxisEvent(vidId, axisIdx, minVal);
+            sleep(offMs);
+        }
+        vidState[vidId][axisIdx] = minVal;
+        dispatchVidAxisEvent(vidId, axisIdx, minVal);
+    });
+}
+
+void MappingManager::stopTurbo(const std::string& vidId, int axisIndex) {
+    TurboKey key { vidId, axisIndex };
+    auto it = activeTurbos.find(key);
+    if (it == activeTurbos.end()) return;
+    *it->second = false;
+    activeTurbos.erase(it);
+}
+
+void MappingManager::stopAllTurbosForLayer(Layer* layer) {
+    for (const auto& tr : layer->turboRules) {
+        if (tr.axisIndex != -1)
+            stopTurbo(tr.vidId, tr.axisIndex);
     }
 }
 

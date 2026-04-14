@@ -30,4 +30,6 @@ enum Main2PicoMethod : uint16_t {
                                   Encoding: putBool(ok), putString(errorMsg)
                                   On success: Pico replies {true,""} then reboots.
                                   On failure: Pico replies {false, reason}, no reboot. */
+    M2P_SET_USB_CONNECTED = 10, /* args: bool connected | returns: void
+                                   false = tud_disconnect(); true = tud_connect() */
 };

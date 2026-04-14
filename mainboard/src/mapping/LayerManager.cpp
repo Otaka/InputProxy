@@ -37,6 +37,7 @@ void LayerManager::activate(const std::string& id) {
     for (auto* l : activeStack)
         if (l->id == id) return;
     activeStack.insert(activeStack.begin(), layer);
+    if (onActivate) onActivate(layer);
     std::cout << "[layers] activated '" << id << "'\n";
 }
 
@@ -44,6 +45,7 @@ void LayerManager::deactivate(const std::string& id) {
     auto it = std::find_if(activeStack.begin(), activeStack.end(),
                            [&id](Layer* l) { return l->id == id; });
     if (it == activeStack.end()) return;
+    if (onDeactivate) onDeactivate(*it);
     (*it)->resetActiveRules();
     activeStack.erase(it);
     std::cout << "[layers] deactivated '" << id << "'\n";

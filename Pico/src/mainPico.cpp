@@ -153,6 +153,14 @@ void initUartRpcSystem() {
         return nullptr;
     });
 
+    // setUsbConnected(bool connected) → void
+    rpc->registerMethod(M2P_SET_USB_CONNECTED, [](RpcArg* arg) -> RpcArg* {
+        bool connected = arg->getBool();
+        if (connected) tud_connect();
+        else           tud_disconnect();
+        return nullptr;
+    });
+
     // setConfiguration(string configJson) → bool ok, string errorMsg
     rpc->registerMethod(M2P_SET_CONFIGURATION, [rpc](RpcArg* arg) -> RpcArg* {
         char jsonBuf[960] = {}; // 900 byte limit + headroom

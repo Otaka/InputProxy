@@ -3,14 +3,18 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <optional>
 #include <cstdint>
 #include "emulation/VirtualOutputDevice.h"
 #include "PicoConfig.h"
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-enum class ConfActionType { EmitAxis, OutputSequence, Sleep };
-enum class ConfRuleType   { Simple, Hotkey };
+enum class ConfActionType      { EmitAxis, OutputSequence, Sleep };
+enum class ConfRuleType        { Simple, Hotkey, Block, VodState, Turbo };
+enum class ConfVodState        { Active, Silenced, Disconnected };
+enum class ConfTurboCondition  { WhileAxisActive, Always };
+enum class ConfActivationMode  { Toggle, WhileActive, WhileNotActive };
 
 // ── Conf structs (pure data, no runtime state) ───────────────────────────────
 
@@ -54,6 +58,19 @@ struct ConfAxisEntry {
     std::string to;
 };
 
+// Axis/value pair for block rules
+struct ConfBlockAxis {
+    std::string axis;
+    int         value = 0;
+};
+
+// Activation trigger for a layer
+struct ConfActivation {
+    ConfActivationMode mode   = ConfActivationMode::Toggle;
+    std::string        vid;
+    std::string        hotkey;
+};
+
 // A single action in press_action / release_action
 struct ConfAction {
     ConfActionType type     = ConfActionType::EmitAxis;
@@ -73,14 +90,27 @@ struct ConfRule {
     bool                       propagate = false;
     std::vector<ConfAction>    pressActions;
     std::vector<ConfAction>    releaseActions;
+    // Block
+    std::vector<ConfBlockAxis> blockAxes;
+    // VodState
+    ConfVodState               vodState  = ConfVodState::Active;
+    // Turbo
+    std::string                turboAxis;
+    int                        turboOnMs         = 100;
+    int                        turboOffMs        = 100;
+    int                        turboInitialDelay = 0;
+    int                        turboMaxValue     = 1000;
+    int                        turboMinValue     = 0;
+    ConfTurboCondition         turboCondition    = ConfTurboCondition::WhileAxisActive;
 };
 
 // Matches layers[]
 struct ConfLayer {
-    std::string           id;
-    std::string           name;
-    bool                  active = true;
-    std::vector<ConfRule> rules;
+    std::string                   id;
+    std::string                   name;
+    bool                          active = true;
+    std::vector<ConfRule>         rules;
+    std::optional<ConfActivation> activation;
 };
 
 // Top-level config document
