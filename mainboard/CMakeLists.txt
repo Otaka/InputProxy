@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-include_directories(../shared/Corocgo ../shared/ )
+include_directories(src/ ../shared/Corocgo ../shared/ src/emulation src/mapping  )
 project(InputProxyMainBoard CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -13,8 +13,8 @@ add_executable(app
     src/RealDeviceManager.cpp
     src/rest/CoHttpServer.cpp
     src/rest/RestApi.cpp
-    src/EmulatedDeviceManager.cpp
-    src/VirtualOutputDevice.cpp
+    src/emulation/EmulatedDeviceManager.cpp
+    src/emulation/VirtualOutputDevice.cpp
     src/MainConfig.cpp
     src/mapping/MappingManager.cpp
     src/mapping/OutputSequenceParser.cpp

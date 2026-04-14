@@ -54,6 +54,11 @@ struct RealDevice {
 
     int nextVirtualAxisIndex;                       // Counter for assigning virtual axis indices
 
+    // Combined mouse XY axis: set to virtual index when device has both REL_X and REL_Y
+    int mouseXYAxisIndex;
+    int pendingRelX;   // Accumulated REL_X delta since last EV_SYN
+    int pendingRelY;   // Accumulated REL_Y delta since last EV_SYN
+
     // Device information
     uint16_t vendorId;
     uint16_t productId;
@@ -61,7 +66,8 @@ struct RealDevice {
     std::string usbPath;                            // For devices with duplicate serials
     std::string deviceName;                         // Human-readable name
 
-    RealDevice() : deviceId(0), fd(-1), active(true), vendorId(0), productId(0), nextVirtualAxisIndex(10000) {}
+    RealDevice() : deviceId(0), fd(-1), active(true), vendorId(0), productId(0),
+                   nextVirtualAxisIndex(10000), mouseXYAxisIndex(-1), pendingRelX(0), pendingRelY(0) {}
 };
 
 /**

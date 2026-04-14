@@ -23,6 +23,7 @@
 #include "devices/AbstractDeviceManager.h"
 #include "devices/HidDeviceManager.h"
 #include "devices/XinputDeviceManager.h"
+#include "devices/TinyUsbMouseDevice.h"
 
 using namespace corocrpc;
 using namespace corocgo;
@@ -245,7 +246,6 @@ int _main() {
     srand(to_us_since_boot(get_absolute_time()));
     rebootChannel = makeChannel<bool>(1, 1);
     logChannel    = makeChannel<std::string>(10);
-
     initPicoLed();
 
     persistentStorage.load();
@@ -377,8 +377,8 @@ int _main() {
         int index = 0;
         char buffer[256];
         while (true) {
-            sleep(10000);
-            sprintf(buffer, "Hello world %d", index++);
+            sleep(30000);
+            sprintf(buffer, "Hello from pico %d", index++);
             logChannel->send(buffer);
         }
     });

@@ -15,7 +15,7 @@ UartManagerPico::UartManagerPico() {
     channel = makeChannel<bool>(1, 4);
     instance = this;
 
-    uart_init(uart0, 115200);
+    uart_init(uart0, 230400);
     gpio_set_function(0, GPIO_FUNC_UART);  // TX
     gpio_set_function(1, GPIO_FUNC_UART);  // RX
 

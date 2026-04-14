@@ -1,6 +1,7 @@
 #include "TinyUsbMouseDevice.h"
 #include "HidDeviceManager.h"
 #include "tusb.h"
+#include <cstdio>
 
 // HID Report Descriptor for Mouse Interface
 // Supports: Standard 5-button mouse with wheel and horizontal wheel
@@ -94,40 +95,41 @@ void TinyUsbMouseDevice::setAxis(int code, int value) {
         return;
     }
 
+    // Combined mouse XY (axis 14): low 16 bits = signed X, high 16 bits = signed Y
+    if (code == MOUSE_AXIS_XY) {
+        int16_t rx = (int16_t)(value & 0xFFFF);
+        int16_t ry = (int16_t)((value >> 16) & 0xFFFF);
+        mouseReport.x = (rx < -127) ? -127 : (rx > 127) ? 127 : (int8_t)rx;
+        mouseReport.y = (ry < -127) ? -127 : (ry > 127) ? 127 : (int8_t)ry;
+        reportChanged = true;
+        return;
+    }
+
     // Mouse axes (6-13) - split into plus/minus for accurate control
-    // Values are 0-1000, clamped to 0-127 for HID report
     switch (code) {
         case MOUSE_AXIS_X_MINUS:  // Left
-            mouseReport.x = -static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.x = -static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_X_PLUS:   // Right
-            mouseReport.x = static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.x = static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_Y_MINUS:  // Up (negative Y)
-            mouseReport.y = -static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.y = -static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_Y_PLUS:   // Down (positive Y)
-            mouseReport.y = static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.y = static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_WHEEL_MINUS:  // Wheel Down
-            mouseReport.wheel = -static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.wheel = -static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_WHEEL_PLUS:   // Wheel Up
-            mouseReport.wheel = static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.wheel = static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_H_WHEEL_MINUS:  // H-Wheel Left
-            mouseReport.h_wheel = -static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.h_wheel = -static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
         case MOUSE_AXIS_H_WHEEL_PLUS:   // H-Wheel Right
-            mouseReport.h_wheel = static_cast<int8_t>(value > 127 ? 127 : value);
-            reportChanged = true;
+            if (value > 0) { mouseReport.h_wheel = static_cast<int8_t>(value > 127 ? 127 : value); reportChanged = true; }
             break;
     }
 }
@@ -176,14 +178,14 @@ void TinyUsbMouseDevice::update() {
 void TinyUsbMouseDevice::sendReport() {
     // Send mouse report
     tud_hid_n_report(m_interfaceNum, REPORT_ID_MOUSE, &mouseReport, sizeof(mouseReport));
-    
+
     // After sending movement/scroll, reset those values (buttons remain)
     // This prevents repeated movements from a single input
     mouseReport.x = 0;
     mouseReport.y = 0;
     mouseReport.wheel = 0;
     mouseReport.h_wheel = 0;
-    
+
     reportChanged = false;
 }
 
@@ -222,12 +224,11 @@ void TinyUsbMouseDevice::setReport(uint8_t report_id, hid_report_type_t report_t
 
 AxesDescription TinyUsbMouseDevice::axesDescription() {
     // Build static AxisDescription array (only once)
-    static AxisDescription mouseAxes[15];
+    static AxisDescription mouseAxes[16];
     static bool initialized = false;
 
     if (!initialized) {
-        // Map all 15 mouse axes (0-14) with their names and indices
-        for (int i = 0; i < 15; i++) {
+        for (int i = 0; i < 16; i++) {
             mouseAxes[i].name = (char*)MOUSE_AXES_NAMES[i];
             mouseAxes[i].axisIndex = i;
         }
@@ -236,7 +237,7 @@ AxesDescription TinyUsbMouseDevice::axesDescription() {
 
     AxesDescription desc;
     desc.axes = mouseAxes;
-    desc.axesCount = 15; // 0-14 (index 0 unused)
+    desc.axesCount = 16;
     return desc;
 }
 

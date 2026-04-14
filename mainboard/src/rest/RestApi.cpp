@@ -84,8 +84,12 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
                   std::vector<EmulationBoard>* boards,
                   EmulatedDeviceManager* emulatedDeviceManager,
                   LayerManager* layerManager,
-                  std::function<void()> reloadConfigFn) {
-    coro([port, deviceManager, boards, emulatedDeviceManager, layerManager, reloadConfigFn]() {
+                  std::function<std::vector<std::string>()> reloadConfigFn,
+                  int* turboTimesPerSecond,
+                  std::string* turboDeviceIdStr,
+                  int* turboAxisIndex) {
+    coro([port, deviceManager, boards, emulatedDeviceManager, layerManager, reloadConfigFn,
+          turboTimesPerSecond, turboDeviceIdStr, turboAxisIndex]() {
         auto router = std::make_shared<CoHttpRouter>();
 
         // ---- /emulationboard/* ----
@@ -380,8 +384,66 @@ void startRestApi(int port, RealDeviceManager* deviceManager,
 
         router->endpoint("POST", "/config/reload",
             [reloadConfigFn](coSession session, auto) {
-                reloadConfigFn();
-                sendJson(session, 200, "{\"ok\":true}");
+                auto errors = reloadConfigFn();
+                if (errors.empty()) {
+                    sendJson(session, 200, "{\"ok\":true}");
+                    return;
+                }
+                std::ostringstream json;
+                json << "{\"ok\":false,\"errors\":[";
+                for (size_t i = 0; i < errors.size(); ++i) {
+                    if (i) json << ",";
+                    json << "\"" << jsonEscape(errors[i]) << "\"";
+                }
+                json << "]}";
+                sendJson(session, 422, json.str());
+            });
+
+        // ---- /debug/* ----
+
+        router->endpoint("POST", "/debug/turbo/off",
+            [turboTimesPerSecond](coSession session, auto) {
+                *turboTimesPerSecond = 0;
+                sendJson(session, 200, "{\"ok\":true,\"turboTimesPerSecond\":0}");
+            });
+
+        router->endpoint("POST", "/debug/turbo/{deviceId}/{axisName}/{timesPerSecond}",
+            [deviceManager, turboTimesPerSecond, turboDeviceIdStr, turboAxisIndex](coSession session, auto vars) {
+                int32_t tps = 0;
+                if (!parseId(vars, "timesPerSecond", tps) || tps <= 0) {
+                    sendJson(session, 400, "{\"error\":\"invalid timesPerSecond — use /debug/turbo/off to disable\"}"); return;
+                }
+
+                const std::string& deviceId = vars.at("deviceId");
+                const std::string& axisName = vars.at("axisName");
+
+                // Resolve device by deviceIdStr
+                const RealDevice* dev = nullptr;
+                for (auto& [id, d] : deviceManager->getDevices()) {
+                    if (d.deviceIdStr == deviceId) { dev = &d; break; }
+                }
+                if (!dev) {
+                    sendJson(session, 404, "{\"error\":\"device not found\"}"); return;
+                }
+
+                // Resolve axis name to index
+                int axisIdx = dev->axes.getIndex(axisName);
+                if (axisIdx < 0) {
+                    sendJson(session, 404, "{\"error\":\"axis not found\"}"); return;
+                }
+
+                *turboDeviceIdStr    = deviceId;
+                *turboAxisIndex      = axisIdx;
+                *turboTimesPerSecond = tps;   // set last — coroutine guards on this
+
+                std::ostringstream json;
+                json << "{\"ok\":true"
+                     << ",\"deviceId\":\""    << jsonEscape(deviceId) << "\""
+                     << ",\"axisName\":\""    << jsonEscape(axisName) << "\""
+                     << ",\"axisIndex\":"     << axisIdx
+                     << ",\"timesPerSecond\":" << tps
+                     << "}";
+                sendJson(session, 200, json.str());
             });
 
         // ---- Server loop ----

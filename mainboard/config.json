@@ -1,7 +1,7 @@
 {
     "emulation_boards": [
         {
-            "id": "7I2GP",
+            "id": "BEPBN",
             "vid": 4618,
             "pid": 4,
             "manufacturer": "InputProxy",
@@ -9,26 +9,98 @@
             "serial": "20260107",
             "devices": [
                 { "id": "vkbd1",  "type": "keyboard",  "name": "InputProxy Keyboard" },
-                { "id": "vmouse", "type": "mouse",     "name": "InputProxy Mouse" },
+                { "id": "vmouse1", "type": "mouse",     "name": "InputProxy Mouse" },
                 { "id": "vgp1",   "type": "hidgamepad","name": "InputProxy Gamepad 1", "buttons": 13, "axesmask": 31, "hat": true },
-                { "id": "vgp2",   "type": "hidgamepad","name": "InputProxy Gamepad 2", "buttons": 13, "axesmask": 31, "hat": true }
+                { "id": "vgp2",   "type": "hidgamepad","name": "InputProxy Gamepad 2", "buttons": 13, "axesmask": 31, "hat": true },
+                { "id": "vgp3",   "type": "hidgamepad","name": "InputProxy Gamepad 2", "buttons": 13, "axesmask": 31, "hat": true }
             ]
         }
     ],
 
     "virtual_input_devices": [
         { "id": "vid1", "name": "Gamepad 1" },
-        { "id": "vid2", "name": "Gamepad 2" }
+        { "id": "vid2", "name": "Gamepad 2" },
+        { "id": "vid3", "name": "Gamepad 3" },
+        { "id": "vidmouse", "name": "Virtual Mouse" },
+        { "id": "vidkbd", "name": "Virtual Keyboard" }
     ],
 
     "real_devices": [
-        { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1",
+        { "id": "4d9:fc4d:272:USB Gaming Mouse:35", "assignedTo": "vidmouse",
           "rename_axes": {
-              "Stick LX-": "ArrowLeft",
-              "Stick LX+": "ArrowRight"
+            "Button 272": "Button Left",  
+            "Button 273": "Button Right",
+            "Button 274": "Button Middle"
           }
         },
-        { "id": "54c:9cc:33041:Sony Interactive Entertainment Wireless Controller:33", "assignedTo": "vid2" }
+        { "id": "4e53:5407:273:USB OPTICAL MOUSE :18", "assignedTo": "vidmouse",
+          "rename_axes": {
+            "Button 272": "Button Left",  
+            "Button 273": "Button Right",
+            "Button 274": "Button Middle"
+          }
+        },
+        { "id": "45e:28e:272:Microsoft X-Box 360 pad:31", "assignedTo": "vid1",
+          "rename_axes": {
+            "Button 304": "ButtonA",  
+            "Button 305": "ButtonB",
+            "Button 307": "ButtonX",
+            "Button 308": "ButtonY",
+            "Button 310": "ButtonBumperLeft",
+            "Button 311": "ButtonBumperRight",
+            "Button 314": "ButtonBack",
+            "Button 315": "ButtonStart",
+            "Button 316": "ButtonXBOX",
+            "Button 317": "ButtonThumbLeft",
+            "Button 318": "ButtonThumbRight",
+            "Stick RZ": "TriggerRight",
+            "Stick LZ": "TriggerLeft"
+          }
+        },
+        { "id": "54c:9cc:33041:Sony Interactive Entertainment Wireless Controller:33", "assignedTo": "vid2","rename_axes": {
+            "Button 304": "ButtonA",  
+            "Button 305": "ButtonB",
+            "Button 308": "ButtonX",
+            "Button 307": "ButtonY",
+            "Button 310": "ButtonBumperLeft",
+            "Button 311": "ButtonBumperRight",
+            "Button 312": "ButtonTriggerLeft",
+            "Button 313": "ButtonTriggerRight",
+            "Button 314": "ButtonBack",
+            "Button 315": "ButtonStart",
+            "Button 317": "ButtonThumbLeft",
+            "Button 318": "ButtonThumbRight",
+            "Stick RZ": "TriggerRight",
+            "Stick LZ": "TriggerLeft"
+          }
+        },
+        { "id": "81f:e401:272:USB gamepad           :16", "assignedTo": "vid3","rename_axes": {
+            "Button 290": "ButtonA",  
+            "Button 289": "ButtonB",
+            "Button 291": "ButtonX",
+            "Button 288": "ButtonY",
+            "Button 297": "ButtonStart",
+            "Button 296": "ButtonBack",
+            "Button 292": "ButtonBumperLeft",
+            "Button 293": "ButtonBumperRight"
+          }
+        },
+        { "id": "2dc8:200a:512:Generic X-Box pad:31", "assignedTo": "vid3","rename_axes": {
+            "Button 304": "ButtonA",  
+            "Button 305": "ButtonB",
+            "Button 307": "ButtonX",
+            "Button 308": "ButtonY",
+            "Button 315": "ButtonStart",
+            "Button 314": "ButtonBack",
+            "Button 316": "ButtonXBOX",
+            "Button 317": "ButtonBumperLeft",
+            "Button 310": "ButtonBumperRight",
+            "Button 318": "TriggerLeft",
+            "Stick LZ": "TriggerRight",
+            "Button 311": "ButtonThumbLeft",
+            "Stick RZ": "ButtonThumbRight"
+          }
+        }
     ],
 
     "layers": [
@@ -39,33 +111,15 @@
             "rules": [
                 {
                     "type": "simple",
-                    "vid": "vid1",
-                    "vod": "vgp1",
+                    "vid": "vidmouse",
+                    "vod": "vmouse1",
                     "axes": [
-                        { "from": "Button 304", "to": "Button 1" },
-                        { "from": "Button 305", "to": "Button 2" },
-                        { "from": "Button 307", "to": "Button 3" },
-                        { "from": "Button 308", "to": "Button 4" },
-                        { "from": "Button 310", "to": "Button 5" },
-                        { "from": "Button 311", "to": "Button 6" },
-                        { "from": "Button 314", "to": "Button 7" },
-                        { "from": "Button 315", "to": "Button 8" },
-                        { "from": "Button 317", "to": "Button 9" },
-                        { "from": "Button 318", "to": "Button 10" },
-                        { "from": "Stick LX-", "to": "Stick LX-" },
-                        { "from": "Stick LX+", "to": "Stick LX+" },
-                        { "from": "Stick LY-", "to": "Stick LY-" },
-                        { "from": "Stick LY+", "to": "Stick LY+" },
-                        { "from": "Stick RX-", "to": "Stick RX-" },
-                        { "from": "Stick RX+", "to": "Stick RX+" },
-                        { "from": "Stick RY-", "to": "Stick RY-" },
-                        { "from": "Stick RY+", "to": "Stick RY+" },
-                        { "from": "Stick LZ", "to": "Button 11" },
-                        { "from": "Stick RZ", "to": "Button 12" },
-                        { "from": "Hat Y-", "to": "Hat Up" },
-                        { "from": "Hat Y+", "to": "Hat Down" },
-                        { "from": "Hat X-", "to": "Hat Left" },
-                        { "from": "Hat X+", "to": "Hat Right" }
+                        { "from": "Button Left", "to": "Button Left" },
+                        { "from": "Button Right", "to": "Button Right" },
+                        { "from": "Button Middle", "to": "Button Middle" },
+                        { "from": "Mouse XY", "to": "Mouse XY" },
+                        { "from": "Wheel+", "to": "Wheel Up" },
+                        { "from": "Wheel-", "to": "Wheel Down" }
                     ]
                 },
                 {
@@ -73,38 +127,101 @@
                     "vid": "vid2",
                     "vod": "vgp2",
                     "axes": [
-                         { "from": "Hat X-", "to": "Hat Left" },
-                         { "from": "Hat X+", "to": "Hat Right" },
-                         { "from": "Hat Y-", "to": "Hat Up" },
-                         { "from": "Hat Y+", "to": "Hat Down" },
-                         { "from": "Button 304", "to": "Button 1" },
-                         { "from": "Button 305", "to": "Button 2" },
-                         { "from": "Button 307", "to": "Button 4" },
-                         { "from": "Button 308", "to": "Button 3" },
-                         { "from": "Button 310", "to": "Button 5" },
-                         { "from": "Button 311", "to": "Button 6" },
-                         { "from": "Button 314", "to": "Button 7" },
-                         { "from": "Button 315", "to": "Button 8" },
-                         { "from": "Button 317", "to": "Button 9" },
-                         { "from": "Button 318", "to": "Button 10" },
-                         { "from": "Stick LX-", "to": "Stick LX-" },
-                         { "from": "Stick LX+", "to": "Stick LX+" },
-                         { "from": "Stick LY-", "to": "Stick LY-" },
-                         { "from": "Stick LY+", "to": "Stick LY+" },
-                         { "from": "Stick RX-", "to": "Stick RX-" },
-                         { "from": "Stick RX+", "to": "Stick RX+" },
-                         { "from": "Stick RY-", "to": "Stick RY-" },
-                         { "from": "Stick RY+", "to": "Stick RY+" },
-                         { "from": "Stick LZ", "to": "Button 11" },
-                         { "from": "Stick RZ", "to": "Button 12" }
+                        { "from": "ButtonA", "to": "Button_1" },
+                        { "from": "ButtonB", "to": "Button_2" },
+                        { "from": "ButtonX", "to": "Button_3" },
+                        { "from": "ButtonY", "to": "Button_4" },
+                        { "from": "ButtonBack", "to": "Button_5" },
+                        { "from": "ButtonStart", "to": "Button_6" },
+                        { "from": "ButtonXBOX", "to": "Button_7" },
+                        { "from": "ButtonBumperLeft", "to": "Button_8" },
+                        { "from": "ButtonBumperRight", "to": "Button_9" },
+                        { "from": "ButtonThumbLeft", "to": "Button_10" },
+                        { "from": "ButtonThumbRight", "to": "Button_11" },
+                        { "from": "TriggerLeft", "to": "Button_12" },
+                        { "from": "TriggerRight", "to": "Button_13" },
+                        { "from": "Stick LX-", "to": "Stick_Left_X-" },
+                        { "from": "Stick LX+", "to": "Stick_Left_X+" },
+                        { "from": "Stick LY-", "to": "Stick_Left_Y-" },
+                        { "from": "Stick LY+", "to": "Stick_Left_Y+" },
+                        { "from": "Stick RX-", "to": "Stick_Right_X-" },
+                        { "from": "Stick RX+", "to": "Stick_Right_X+" },
+                        { "from": "Stick RY-", "to": "Stick_Right_Y-" },
+                        { "from": "Stick RY+", "to": "Stick_Right_Y+" },
+                        { "from": "Stick LZ", "to": "Button_11" },
+                        { "from": "Stick RZ", "to": "Button_12" },
+                        { "from": "Hat Y-", "to": "Dpad_Up" },
+                        { "from": "Hat Y+", "to": "Dpad_Down" },
+                        { "from": "Hat X-", "to": "Dpad_Left" },
+                        { "from": "Hat X+", "to": "Dpad_Right" }
                     ]
                 },
                 {
                     "type": "simple",
                     "vid": "vid1",
-                    "vod": "vkbd1",
+                    "vod": "vgp1",
                     "axes": [
-                        
+                        { "from": "ButtonA", "to": "Button_1" },
+                        { "from": "ButtonB", "to": "Button_2" },
+                        { "from": "ButtonX", "to": "Button_3" },
+                        { "from": "ButtonY", "to": "Button_4" },
+                        { "from": "ButtonBack", "to": "Button_5" },
+                        { "from": "ButtonStart", "to": "Button_6" },
+                        { "from": "ButtonXBOX", "to": "Button_7" },
+                        { "from": "ButtonBumperLeft", "to": "Button_8" },
+                        { "from": "ButtonBumperRight", "to": "Button_9" },
+                        { "from": "ButtonThumbLeft", "to": "Button_10" },
+                        { "from": "ButtonThumbRight", "to": "Button_11" },
+                        { "from": "TriggerLeft", "to": "Button_12" },
+                        { "from": "TriggerRight", "to": "Button_13" },
+                        { "from": "Stick LX-", "to": "Stick_Left_X-" },
+                        { "from": "Stick LX+", "to": "Stick_Left_X+" },
+                        { "from": "Stick LY-", "to": "Stick_Left_Y-" },
+                        { "from": "Stick LY+", "to": "Stick_Left_Y+" },
+                        { "from": "Stick RX-", "to": "Stick_Right_X-" },
+                        { "from": "Stick RX+", "to": "Stick_Right_X+" },
+                        { "from": "Stick RY-", "to": "Stick_Right_Y-" },
+                        { "from": "Stick RY+", "to": "Stick_Right_Y+" },
+                        { "from": "Stick LZ", "to": "Button_11" },
+                        { "from": "Stick RZ", "to": "Button_12" },
+                        { "from": "Hat Y-", "to": "Dpad_Up" },
+                        { "from": "Hat Y+", "to": "Dpad_Down" },
+                        { "from": "Hat X-", "to": "Dpad_Left" },
+                        { "from": "Hat X+", "to": "Dpad_Right" }
+                    ]
+                },
+                {
+                    "type": "simple",
+                    "vid": "vid3",
+                    "vod": "vgp3",
+                    "axes": [
+                        { "from": "ButtonA", "to": "Button_1" },
+                        { "from": "ButtonB", "to": "Button_2" },
+                        { "from": "ButtonX", "to": "Button_3" },
+                        { "from": "ButtonY", "to": "Button_4" },
+                        { "from": "ButtonBack", "to": "Button_5" },
+                        { "from": "ButtonStart", "to": "Button_6" },
+                        { "from": "ButtonXBOX", "to": "Button_7" },
+                        { "from": "ButtonBumperLeft", "to": "Button_8" },
+                        { "from": "ButtonBumperRight", "to": "Button_9" },
+                        { "from": "ButtonThumbLeft", "to": "Button_10" },
+                        { "from": "ButtonThumbRight", "to": "Button_11" },
+                        { "from": "TriggerLeft", "to": "Button_12" },
+                        { "from": "TriggerRight", "to": "Button_13" },
+                        { "from": "Stick LX-", "to": "Stick_Left_X-" },
+                        { "from": "Stick LX+", "to": "Stick_Left_X+" },
+                        { "from": "Stick LY-", "to": "Stick_Left_Y-" },
+                        { "from": "Stick LY+", "to": "Stick_Left_Y+" },
+                        { "from": "Stick RX-", "to": "Stick_Right_X-" },
+                        { "from": "Stick RX+", "to": "Stick_Right_X+" },
+                        { "from": "Stick RY-", "to": "Stick_Right_Y-" },
+                        { "from": "Stick RY+", "to": "Stick_Right_Y+" },
+                        { "from": "Stick LZ", "to": "Button_11" },
+                        { "from": "Stick RZ", "to": "Button_12" },
+                        { "from": "Hat Y-", "to": "Dpad_Up" },
+                        { "from": "Hat Y+", "to": "Dpad_Down" },
+                        { "from": "Hat X-", "to": "Dpad_Left" },
+                        { "from": "Hat X+", "to": "Dpad_Right" }
                     ]
                 }
             ]

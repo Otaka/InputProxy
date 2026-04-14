@@ -4,7 +4,7 @@
 #include <map>
 #include <unordered_map>
 #include "../../shared/shared.h"
-#include "MainConfig.h"
+#include "../MainConfig.h"
 #include "VidStateMap.h"
 #include "LayerManager.h"
 

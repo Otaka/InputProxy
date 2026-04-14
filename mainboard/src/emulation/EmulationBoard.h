@@ -77,8 +77,7 @@ public:
         arg->putInt32(device);
         arg->putInt32(axis);
         arg->putInt32(value);
-        corocrpc::RpcResult result = rpc->call(M2P_SET_AXIS, arg);
-        rpc->disposeRpcResult(result);
+        rpc->callNoResponse(M2P_SET_AXIS, arg);
         rpc->disposeRpcArg(arg);
     }
 

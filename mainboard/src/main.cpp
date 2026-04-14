@@ -13,7 +13,7 @@
 #include "EmulationBoard.h"
 #include "EmulatedDeviceManager.h"
 #include "MainConfig.h"
-#include "mapping/MappingManager.h"
+#include "MappingManager.h"
 
 using namespace corocrpc;
 using namespace corocgo;
@@ -41,6 +41,9 @@ RealDeviceManager* deviceManager;
 EmulatedDeviceManager* emulatedDeviceManager = nullptr;
 MappingManager* mappingManager = nullptr;
 std::vector<BoardEntry> boardConfigs;          // loaded from config.json at startup
+int         turboTimesPerSecond = 0;   // 0 = disabled; set via /debug/turbo/{deviceId}/{axisName}/{n}
+std::string turboDeviceIdStr;
+int         turboAxisIndex = -1;
 
 
 // ---------------------------------------------------------------------------
@@ -84,8 +87,8 @@ bool initRpcSystem() {
 
     for (auto& link : uartLinks) {
         link.framer    = new StreamFramer();
-        link.rpcOutCh  = makeChannel<RpcPacket>(8);
-        link.rpcInCh   = makeChannel<RpcPacket>(8);
+        link.rpcOutCh  = makeChannel<RpcPacket>(100);
+        link.rpcInCh   = makeChannel<RpcPacket>(100);
         link.rpcManager = new RpcManager(link.rpcOutCh, link.rpcInCh, /*timeoutMs=*/2000);
 
         RpcManager*         rpc    = link.rpcManager;
@@ -254,8 +257,8 @@ static std::string resolveAxisName(const std::string& deviceIdStr, int axisIndex
 }
 
 void logRealDeviceEvent(AxisEvent&event) {
-    bool printEvent=true;
-    bool printAxisStringName=true;
+    bool printEvent=false;
+    bool printAxisStringName=false;
     if(printEvent){
         std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex;
         if(printAxisStringName){
@@ -268,7 +271,12 @@ void logRealDeviceEvent(AxisEvent&event) {
 void _main() {
     std::cout << "=== Raspberry Pi 4 to Pico RPC System ===" << std::endl;
 
-    loadConfig("config.json");
+    {
+        std::vector<std::string> startupErrors;
+        if (!loadConfig("config.json", startupErrors))
+            for (const auto& e : startupErrors)
+                std::cerr << "[config] " << e << "\n";
+    }
     boardConfigs = buildBoardEntries(gConfig.emulationBoards);
     std::cout << "Loaded " << boardConfigs.size() << " emulation board config(s)" << std::endl;
     emulatedDeviceManager = new EmulatedDeviceManager();
@@ -363,10 +371,32 @@ void _main() {
         }
     });
 
-    // 5. HTTP API server
-    auto reloadConfigFn = []() {
+    // 5. Debug turbo axis event generator coroutine (disabled by default)
+    coro([]() {
+        while (true) {
+            if (turboTimesPerSecond <= 0 || turboAxisIndex < 0) {
+                sleep(100);
+                continue;
+            }
+            int intervalMs = 1000 / turboTimesPerSecond;
+
+            axisEventChannel->send(AxisEvent{turboDeviceIdStr, turboAxisIndex, 1000});
+            sleep(intervalMs / 2);
+            axisEventChannel->send(AxisEvent{turboDeviceIdStr, turboAxisIndex, 0});
+
+            sleep(intervalMs/2);
+        }
+    });
+
+    // 6. HTTP API server
+    auto reloadConfigFn = []() -> std::vector<std::string> {
         std::cout << "[config] reloading config.json..." << std::endl;
-        loadConfig("config.json");
+        std::vector<std::string> errors;
+        if (!loadConfig("config.json", errors)) {
+            std::cerr << "[config] reload aborted — " << errors.size() << " error(s)\n";
+            return errors;
+        }
+
         boardConfigs = buildBoardEntries(gConfig.emulationBoards); // must refresh — read by onBoot handler
 
         emulatedDeviceManager->clear();
@@ -386,10 +416,12 @@ void _main() {
             link.rpcManager->disposeRpcArg(arg);
         }
         std::cout << "[config] reload complete" << std::endl;
+        return {};
     };
 
     startRestApi(8080, deviceManager, &emulationBoards, emulatedDeviceManager,
-                 &mappingManager->getLayerManager(), reloadConfigFn);
+                 &mappingManager->getLayerManager(), reloadConfigFn,
+                 &turboTimesPerSecond, &turboDeviceIdStr, &turboAxisIndex);
 }
 
 int main() {

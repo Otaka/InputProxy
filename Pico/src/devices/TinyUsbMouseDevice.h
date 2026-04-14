@@ -11,6 +11,7 @@
 // HID Report IDs
 #define REPORT_ID_MOUSE 1  // Standard mouse with buttons, X/Y movement, and wheel
 
+
 class TinyUsbMouseDevice : public AbstractVirtualDevice {
 public:
     explicit TinyUsbMouseDevice(const std::string& name = "InputProxy Mouse");

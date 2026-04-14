@@ -4,7 +4,7 @@
 #include <vector>
 #include <map>
 #include <cstdint>
-#include "VirtualOutputDevice.h"
+#include "emulation/VirtualOutputDevice.h"
 #include "PicoConfig.h"
 
 // ── Enums ────────────────────────────────────────────────────────────────────
@@ -106,8 +106,8 @@ extern ConfRoot gConfig;
 // ── API ───────────────────────────────────────────────────────────────────────
 
 // Parse file at path into gConfig. On failure: logs to stderr, leaves gConfig
-// unchanged, returns false.
-bool loadConfig(const std::string& path);
+// unchanged, returns false. All validation errors are appended to `errors`.
+bool loadConfig(const std::string& path, std::vector<std::string>& errors);
 
 // Serialize gConfig to JSON and write to path. Returns false on failure.
 // Not wired up yet — placeholder for future REST save endpoint.

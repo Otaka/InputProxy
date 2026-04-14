@@ -13,13 +13,13 @@ ConfRoot gConfig;
 
 // ── from_json helpers ─────────────────────────────────────────────────────────
 
-static PicoDeviceType parsePicoDeviceType(const std::string& s) {
+static PicoDeviceType parsePicoDeviceType(const std::string& s, std::vector<std::string>& errors) {
     if (s == "keyboard")       return PicoDeviceType::KEYBOARD;
     if (s == "mouse")          return PicoDeviceType::MOUSE;
     if (s == "hidgamepad")     return PicoDeviceType::HID_GAMEPAD;
     if (s == "xbox360gamepad") return PicoDeviceType::XBOX360_GAMEPAD;
-    std::cerr << "[config] unknown device type: " << s << "\n";
-    return PicoDeviceType::HID_GAMEPAD;
+    errors.push_back("unknown device type: \"" + s + "\"");
+    return PicoDeviceType::HID_GAMEPAD;  // placeholder; config will be rejected
 }
 
 static std::string serializePicoDeviceType(PicoDeviceType t) {
@@ -32,10 +32,10 @@ static std::string serializePicoDeviceType(PicoDeviceType t) {
     return "hidgamepad";
 }
 
-static ConfVod confVodFromJson(const json& j) {
+static ConfVod confVodFromJson(const json& j, std::vector<std::string>& errors) {
     ConfVod v;
     v.id       = j.value("id", "");
-    v.type     = parsePicoDeviceType(j.value("type", "hidgamepad"));
+    v.type     = parsePicoDeviceType(j.value("type", ""), errors);
     v.name     = j.value("name", "");
     v.buttons  = j.value("buttons",  (uint8_t)0);
     v.axesMask = j.value("axesmask", (uint8_t)0);   // JSON key: axesmask
@@ -54,7 +54,7 @@ static json confVodToJson(const ConfVod& v) {
     };
 }
 
-static ConfEmulationBoard confEmulationBoardFromJson(const json& j) {
+static ConfEmulationBoard confEmulationBoardFromJson(const json& j, std::vector<std::string>& errors) {
     ConfEmulationBoard b;
     b.id           = j.value("id", "");
     b.vid          = j.value("vid", (uint16_t)0x120A);
@@ -63,7 +63,7 @@ static ConfEmulationBoard confEmulationBoardFromJson(const json& j) {
     b.product      = j.value("product", "InputProxy Device");
     b.serial       = j.value("serial", "000001");
     for (const auto& d : j.value("devices", json::array()))
-        b.devices.push_back(confVodFromJson(d));
+        b.devices.push_back(confVodFromJson(d, errors));
     return b;
 }
 
@@ -119,12 +119,12 @@ static json confAxisEntryToJson(const ConfAxisEntry& a) {
     return json{ {"from", a.from}, {"to", a.to} };
 }
 
-static ConfActionType parseConfActionType(const std::string& s) {
+static ConfActionType parseConfActionType(const std::string& s, std::vector<std::string>& errors) {
     if (s == "emit_axis")       return ConfActionType::EmitAxis;
     if (s == "output_sequence") return ConfActionType::OutputSequence;
     if (s == "sleep")           return ConfActionType::Sleep;
-    std::cerr << "[config] unknown action type: " << s << "\n";
-    return ConfActionType::EmitAxis;
+    errors.push_back("unknown action type: \"" + s + "\"");
+    return ConfActionType::EmitAxis;  // placeholder; config will be rejected
 }
 
 static std::string serializeConfActionType(ConfActionType t) {
@@ -136,9 +136,9 @@ static std::string serializeConfActionType(ConfActionType t) {
     return "emit_axis";
 }
 
-static ConfAction confActionFromJson(const json& j) {
+static ConfAction confActionFromJson(const json& j, std::vector<std::string>& errors) {
     ConfAction a;
-    a.type     = parseConfActionType(j.value("type", "emit_axis"));
+    a.type     = parseConfActionType(j.value("type", ""), errors);
     a.vod      = j.value("vod", "");
     a.axis     = j.value("axis", "");
     a.sequence = j.value("sequence", "");
@@ -156,17 +156,19 @@ static json confActionToJson(const ConfAction& a) {
     };
 }
 
-static std::vector<ConfAction> parseActionArray(const json& j) {
+static std::vector<ConfAction> parseActionArray(const json& j, std::vector<std::string>& errors) {
     std::vector<ConfAction> result;
     if (!j.is_array()) return result;
-    for (const auto& a : j) result.push_back(confActionFromJson(a));
+    for (const auto& a : j) result.push_back(confActionFromJson(a, errors));
     return result;
 }
 
-static ConfRule confRuleFromJson(const json& j) {
+static ConfRule confRuleFromJson(const json& j, std::vector<std::string>& errors) {
     ConfRule r;
-    std::string typeStr = j.value("type", "simple");
-    r.type      = (typeStr == "hotkey") ? ConfRuleType::Hotkey : ConfRuleType::Simple;
+    std::string typeStr = j.value("type", "");
+    if (typeStr == "hotkey")       r.type = ConfRuleType::Hotkey;
+    else if (typeStr == "simple")  r.type = ConfRuleType::Simple;
+    else                           errors.push_back("unknown rule type: \"" + typeStr + "\"");
     r.vid       = j.value("vid", "");
     r.vod       = j.value("vod", "");
     r.hotkey    = j.value("hotkey", "");
@@ -175,8 +177,8 @@ static ConfRule confRuleFromJson(const json& j) {
         r.axes.push_back(confAxisEntryFromJson(a));
     auto pressIt   = j.find("press_action");
     auto releaseIt = j.find("release_action");
-    if (pressIt   != j.end()) r.pressActions   = parseActionArray(*pressIt);
-    if (releaseIt != j.end()) r.releaseActions = parseActionArray(*releaseIt);
+    if (pressIt   != j.end()) r.pressActions   = parseActionArray(*pressIt,   errors);
+    if (releaseIt != j.end()) r.releaseActions = parseActionArray(*releaseIt, errors);
     return r;
 }
 
@@ -199,13 +201,13 @@ static json confRuleToJson(const ConfRule& r) {
     };
 }
 
-static ConfLayer confLayerFromJson(const json& j) {
+static ConfLayer confLayerFromJson(const json& j, std::vector<std::string>& errors) {
     ConfLayer l;
     l.id     = j.value("id", "");
     l.name   = j.value("name", "");
     l.active = j.value("active", true);
     for (const auto& r : j.value("rules", json::array()))
-        l.rules.push_back(confRuleFromJson(r));
+        l.rules.push_back(confRuleFromJson(r, errors));
     return l;
 }
 
@@ -222,10 +224,11 @@ static json confLayerToJson(const ConfLayer& l) {
 
 // ── loadConfig / saveConfig ───────────────────────────────────────────────────
 
-bool loadConfig(const std::string& path) {
+bool loadConfig(const std::string& path, std::vector<std::string>& errors) {
     try {
         std::ifstream f(path);
         if (!f) {
+            errors.push_back("cannot open file: " + path);
             std::cerr << "[config] cannot open " << path << "\n";
             return false;
         }
@@ -233,17 +236,25 @@ bool loadConfig(const std::string& path) {
 
         ConfRoot local;
         for (const auto& b : root.value("emulation_boards",      json::array()))
-            local.emulationBoards.push_back(confEmulationBoardFromJson(b));
+            local.emulationBoards.push_back(confEmulationBoardFromJson(b, errors));
         for (const auto& v : root.value("virtual_input_devices", json::array()))
             local.vids.push_back(confVidFromJson(v));
         for (const auto& r : root.value("real_devices",          json::array()))
             local.realDevices.push_back(confRealDeviceFromJson(r));
         for (const auto& l : root.value("layers",                json::array()))
-            local.layers.push_back(confLayerFromJson(l));
+            local.layers.push_back(confLayerFromJson(l, errors));
+
+        if (!errors.empty()) {
+            for (const auto& e : errors)
+                std::cerr << "[config] error: " << e << "\n";
+            std::cerr << "[config] rejected " << path << " — " << errors.size() << " error(s)\n";
+            return false;
+        }
 
         gConfig = std::move(local);
         return true;
     } catch (const json::exception& e) {
+        errors.push_back(std::string("JSON parse error: ") + e.what());
         std::cerr << "[config] parse error: " << e.what() << "\n";
         return false;
     }
@@ -305,7 +316,15 @@ std::vector<BoardEntry> buildBoardEntries(const std::vector<ConfEmulationBoard>&
             entry.config.devices.push_back(dc);
             if (d.type == PicoDeviceType::XBOX360_GAMEPAD) hasXInput = true;
         }
-        entry.config.mode = hasXInput ? XINPUT_MODE : HID_MODE;
+        if (hasXInput) {
+            entry.config.mode         = XINPUT_MODE;
+            entry.config.vid          = 0x045E;  // Microsoft
+            entry.config.pid          = 0x028E;  // Xbox 360 Controller
+            entry.config.manufacturer = "Microsoft";
+            entry.config.product      = "Xbox 360 Controller";
+        } else {
+            entry.config.mode = HID_MODE;
+        }
 
         if (!entry.picoId.empty() && !entry.config.devices.empty())
             result.push_back(std::move(entry));

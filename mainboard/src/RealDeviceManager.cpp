@@ -11,6 +11,7 @@
 #include <cerrno>
 #include "corocgo/corocgo.h"
 
+
 // ---------------------------------------------------------------------------
 // LinuxInputManager
 // ---------------------------------------------------------------------------
@@ -130,8 +131,38 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     }
 
     if (existing) {
+        // Reset all stale state before reopening — a different physical device may have
+        // connected at the same evdev path (Linux reuses /dev/input/eventX slots).
+        existing->axes        = AxisTable{};
+        existing->originalAxes= AxisTable{};
+        existing->axisInfo.clear();
+        existing->centeredAxisMapping.clear();
+        existing->lastAxisValues.clear();
+        existing->nextVirtualAxisIndex = 10000;
+        existing->mouseXYAxisIndex = -1;
+        existing->pendingRelX = 0;
+        existing->pendingRelY = 0;
+
         // Reactivate — reopen fd and re-read capabilities
         if (!openDevice(*existing)) return nullptr;
+
+        // Re-read device identity: vendor/product/name may differ if a different device
+        // connected at this path. Update all identity fields and regenerate deviceIdStr.
+        struct input_id newId;
+        if (linuxInput.readDeviceId(existing->fd, newId)) {
+            existing->vendorId  = newId.vendor;
+            existing->productId = newId.product;
+            existing->serial    = std::to_string(newId.version);
+        }
+        char newName[256] = "Unknown";
+        linuxInput.readDeviceName(existing->fd, newName, sizeof(newName));
+        existing->deviceName = newName;
+
+        int axisCount = static_cast<int>(existing->axes.getEntries().size());
+        existing->deviceIdStr = generateDeviceKey(existing->vendorId, existing->productId,
+                                                  existing->serial, existing->usbPath,
+                                                  existing->deviceName, axisCount);
+
         existing->active = true;
         applyAxisRenames(*existing);
         std::cout << "[RealDeviceManager] Device reactivated: "
@@ -266,6 +297,7 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
     }
 
     // Relative axes
+    bool hasRelX = false, hasRelY = false;
     if (testBit(EV_REL, evBits)) {
         unsigned char relBits[(REL_MAX + 7) / 8] = {0};
         linuxInput.readRelBits(device.fd, relBits, sizeof(relBits));
@@ -284,7 +316,16 @@ bool RealDeviceManager::readDeviceCapabilities(RealDevice& device) {
             device.axes.addEntry(axisName + "+", pos);
             device.axes.addEntry(axisName + "-", neg);
             device.centeredAxisMapping[code] = {pos, neg};
+
+            if (code == REL_X) hasRelX = true;
+            if (code == REL_Y) hasRelY = true;
         }
+    }
+    // If device has both REL_X and REL_Y, register a combined "Mouse XY" virtual axis.
+    // X and Y deltas will be packed together on EV_SYN: low 16 bits = signed X, high 16 bits = signed Y.
+    if (hasRelX && hasRelY) {
+        device.mouseXYAxisIndex = device.nextVirtualAxisIndex++;
+        device.axes.addEntry("Mouse XY", device.mouseXYAxisIndex);
     }
 
     // Buttons / keys
@@ -365,7 +406,21 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
 
     for (int i = 0; i < numEvents; i++) {
         const struct input_event& ev = events[i];
-        if (ev.type == EV_SYN) continue;
+
+        // EV_SYN: flush any accumulated mouse XY delta as a single combined event
+        if (ev.type == EV_SYN) {
+            if (device->mouseXYAxisIndex != -1 &&
+                (device->pendingRelX != 0 || device->pendingRelY != 0)) {
+                // Cast to uint16_t first to strip sign extension before packing
+                int32_t packed = (int32_t)(
+                    (uint32_t)(uint16_t)(int16_t)device->pendingRelX |
+                    ((uint32_t)(uint16_t)(int16_t)device->pendingRelY << 16));
+                channel->send(AxisEvent{device->deviceIdStr, device->mouseXYAxisIndex, packed});
+                device->pendingRelX = 0;
+                device->pendingRelY = 0;
+            }
+            continue;
+        }
 
         int axisCode = ev.code;
         int rawValue = ev.value;
@@ -378,6 +433,14 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
 
         const AxisInfo& info = infoIt->second;
 
+        // Combined mouse XY: accumulate REL_X and REL_Y until EV_SYN
+        if (info.eventType == EV_REL && device->mouseXYAxisIndex != -1 &&
+            (axisCode == REL_X || axisCode == REL_Y)) {
+            if (axisCode == REL_X) device->pendingRelX += rawValue;
+            else                   device->pendingRelY += rawValue;
+            continue;
+        }
+
         if (info.isCentered) {
             auto mappingIt = device->centeredAxisMapping.find(axisCode);
             if (mappingIt == device->centeredAxisMapping.end()) continue;
@@ -386,7 +449,13 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
             int negIdx = mappingIt->second.second;
             int posVal = 0, negVal = 0;
 
-            if (rawValue > info.defaultValue) {
+            if (info.eventType == EV_REL) {
+                // Relative axes are deltas — pass the raw value through without scaling
+                if (rawValue > 0)
+                    posVal = std::min(1000, rawValue);
+                else if (rawValue < 0)
+                    negVal = std::min(1000, -rawValue);
+            } else if (rawValue > info.defaultValue) {
                 int range = info.maximum - info.defaultValue;
                 if (range > 0) {
                     posVal = std::min(1000, std::max(0,
@@ -400,18 +469,27 @@ bool RealDeviceManager::processDeviceInput(RealDevice* device, corocgo::Channel<
                 }
             }
 
-            auto lastPosIt = device->lastAxisValues.find(posIdx);
-            int lastPos = (lastPosIt != device->lastAxisValues.end()) ? lastPosIt->second : 0;
-            if (posVal != lastPos) {
+            if (info.eventType == EV_REL) {
+                // Always send both directions so the mapping manager sees a clean
+                // press/release cycle on each event. The zero on the inactive
+                // direction fires the pending release and resets WaitingForRelease
+                // state; the Pico ignores zero-value motion axis updates.
                 channel->send(AxisEvent{device->deviceIdStr, posIdx, posVal});
-                device->lastAxisValues[posIdx] = posVal;
-            }
-
-            auto lastNegIt = device->lastAxisValues.find(negIdx);
-            int lastNeg = (lastNegIt != device->lastAxisValues.end()) ? lastNegIt->second : 0;
-            if (negVal != lastNeg) {
                 channel->send(AxisEvent{device->deviceIdStr, negIdx, negVal});
-                device->lastAxisValues[negIdx] = negVal;
+            } else {
+                auto lastPosIt = device->lastAxisValues.find(posIdx);
+                int lastPos = (lastPosIt != device->lastAxisValues.end()) ? lastPosIt->second : 0;
+                if (posVal != lastPos) {
+                    channel->send(AxisEvent{device->deviceIdStr, posIdx, posVal});
+                    device->lastAxisValues[posIdx] = posVal;
+                }
+
+                auto lastNegIt = device->lastAxisValues.find(negIdx);
+                int lastNeg = (lastNegIt != device->lastAxisValues.end()) ? lastNegIt->second : 0;
+                if (negVal != lastNeg) {
+                    channel->send(AxisEvent{device->deviceIdStr, negIdx, negVal});
+                    device->lastAxisValues[negIdx] = negVal;
+                }
             }
         } else {
             int scaledValue = 0;

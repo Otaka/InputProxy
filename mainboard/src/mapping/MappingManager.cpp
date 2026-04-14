@@ -305,7 +305,7 @@ void MappingManager::executeActions(std::vector<std::unique_ptr<Action>>& action
         if (auto* ea = dynamic_cast<EmitAxisAction*>(act)) {
             int devIdx = edm->resolveId(ea->vodId);
             if (devIdx != -1 && ea->axisIndex != -1){
-                std::cout<<"Action Emit axis index="<<ea->axisIndex<<" value="<<value<<std::endl;
+                //td::cout<<"Action Emit axis index="<<ea->axisIndex<<" value="<<value<<std::endl;
                 edm->setAxis(devIdx, ea->axisIndex, value);
             }
         } else if (auto* osa = dynamic_cast<OutputSequenceAction*>(act)) {
@@ -313,7 +313,7 @@ void MappingManager::executeActions(std::vector<std::unique_ptr<Action>>& action
             for (const auto& step : osa->steps) {
                 if (step.type == SequenceStep::Type::SetAxis) {
                     if (devIdx != -1 && step.axisIndex != -1){
-                        std::cout<<"Action sequence index="<<step.axisIndex<<" value="<<step.value<<std::endl;
+                      // std::cout<<"Action sequence index="<<step.axisIndex<<" value="<<step.value<<std::endl;
                         edm->setAxis(devIdx, step.axisIndex, step.value);
                     }
                 } else {
@@ -359,7 +359,9 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
                         if (lastPart.activationAxis.has_value()) {
                             VidAxisKey key { lastPart.activationAxis->vidId,
                                              lastPart.activationAxis->axisIndex };
-                            layer->pendingReleaseRules[key].push_back(rule);
+                            auto& pl = layer->pendingReleaseRules[key];
+                            if (std::find(pl.begin(), pl.end(), rule) == pl.end())
+                                pl.push_back(rule);
                             rule->state = AxisRule::State::WaitingForRelease;
                         }
                     }
@@ -392,7 +394,9 @@ void MappingManager::dispatchVidAxisEvent(const std::string& vidId,
                             if (lastPart.activationAxis.has_value()) {
                                 VidAxisKey rKey { lastPart.activationAxis->vidId,
                                                   lastPart.activationAxis->axisIndex };
-                                layer->pendingReleaseRules[rKey].push_back(rule);
+                                auto& pl = layer->pendingReleaseRules[rKey];
+                                if (std::find(pl.begin(), pl.end(), rule) == pl.end())
+                                    pl.push_back(rule);
                                 rule->state = AxisRule::State::WaitingForRelease;
                             }
                         }

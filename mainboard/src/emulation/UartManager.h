@@ -108,7 +108,7 @@ class UartManager {
             return false;
         }
 
-        speed_t speed=B115200;
+        speed_t speed=B230400;
         cfsetospeed(&tty, speed);
         cfsetispeed(&tty, speed);
 

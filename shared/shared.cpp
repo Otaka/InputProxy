@@ -3,36 +3,36 @@
 
 const char* HID_GAMEPAD_AXES_NAMES[52] = {
     // Hat switch / D-pad (0-3)
-    "Hat Up", "Hat Down", "Hat Left", "Hat Right",
+    "Dpad_Up", "Dpad_Down", "Dpad_Left", "Dpad_Right",
 
     // Buttons 1-32 (4-35)
-    "Button 1", "Button 2", "Button 3", "Button 4",
-    "Button 5", "Button 6", "Button 7", "Button 8",
-    "Button 9", "Button 10", "Button 11", "Button 12",
-    "Button 13", "Button 14", "Button 15", "Button 16",
-    "Button 17", "Button 18", "Button 19", "Button 20",
-    "Button 21", "Button 22", "Button 23", "Button 24",
-    "Button 25", "Button 26", "Button 27", "Button 28",
-    "Button 29", "Button 30", "Button 31", "Button 32",
+    "Button_1", "Button_2", "Button_3", "Button_4",
+    "Button_5", "Button_6", "Button_7", "Button_8",
+    "Button_9", "Button_10", "Button_11", "Button_12",
+    "Button_13", "Button_14", "Button_15", "Button_16",
+    "Button_17", "Button_18", "Button_19", "Button_20",
+    "Button_21", "Button_22", "Button_23", "Button_24",
+    "Button_25", "Button_26", "Button_27", "Button_28",
+    "Button_29", "Button_30", "Button_31", "Button_32",
 
     // Axes - split into negative and positive directions (36-51)
-    "Stick LX-", "Stick LX+", "Stick LY-", "Stick LY+",
-    "Stick LZ-", "Stick LZ+", "Stick RX-", "Stick RX+",
-    "Stick RY-", "Stick RY+", "Stick RZ-", "Stick RZ+",
+    "Stick_Left_X-", "Stick_Left_X+", "Stick_Left_Y-", "Stick_Left_Y+",
+    "Stick_Left_Z-", "Stick_Left_Z+", "Stick_Right_X-", "Stick_Right_X+",
+    "Stick_Right_Y-", "Stick_Right_Y+", "Stick_Right_Z-", "Stick_Right_Z+",
     "Dial-", "Dial+", "Slider-", "Slider+"
 };
 
 const char* XBOX360_AXES_NAMES[26] = {
-    "D-pad Up", "D-pad Down", "D-pad Left", "D-pad Right",
-    "Start", "Back", "Left Stick", "Right Stick",
-    "Left Bumper", "Right Bumper", "Guide", "Reserved",
-    "A", "B", "X", "Y",
-    "Left Trigger", "Right Trigger",
-    "LX-", "LX+", "LY-", "LY+",
-    "RX-", "RX+", "RY-", "RY+"
+    "Dpad_Up", "Dpad_Down", "Dpad_Left", "Dpad_Right",
+    "Button_Start", "Button_Back", "Button_Stick_Left", "Button_Stick_Right",
+    "Button_Bumper_Left", "Button_Bumper_Right", "Button_XBOX", "Reserved",
+    "Button_A", "Button_B", "Button_X", "Button_Y",
+    "Button_Trigger_Left", "Button_Trigger_Right",
+    "Stick_Left_X-", "Stick_Left_X+", "Stick_Left_Y+", "Stick_Left_Y-",
+    "Stick_Right_X-", "Stick_Right_X+", "Stick_Right_Y+", "Stick_Right_Y-"
 };
 
-const char* MOUSE_AXES_NAMES[15] = {
+const char* MOUSE_AXES_NAMES[16] = {
     "",                  // Index 0 (unused - axes start from 1)
     "Button Left",       // Index 1
     "Button Right",      // Index 2
@@ -46,7 +46,8 @@ const char* MOUSE_AXES_NAMES[15] = {
     "Wheel Down",        // Index 10
     "Wheel Up",          // Index 11
     "H-Wheel Left",      // Index 12
-    "H-Wheel Right"      // Index 13
+    "H-Wheel Right",     // Index 13
+    "Mouse XY"           // Index 14 — packed int32: low16=signed X, high16=signed Y
 };
 
 const char* KEYBOARD_AXES_NAMES[258] = {

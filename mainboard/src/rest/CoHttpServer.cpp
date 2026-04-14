@@ -130,7 +130,7 @@ void CoHttpRouter::dispatch(coSession session) const {
         for (size_t i = 0; i < route.segments.size(); ++i) {
             const auto& seg = route.segments[i];
             if (seg.size() >= 2 && seg.front() == '{' && seg.back() == '}') {
-                vars[seg.substr(1, seg.size() - 2)] = pathSegs[i];
+                vars[seg.substr(1, seg.size() - 2)] = urlDecode(pathSegs[i]);
                 // wildcard: score += 0
             } else if (seg == pathSegs[i]) {
                 ++score;
