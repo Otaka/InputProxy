@@ -9,6 +9,7 @@ add_executable(app
     ../shared/corocgo/corocrpc/corocrpc.cpp
     ../shared/shared.cpp
     ../shared/PicoConfig.cpp
+    ../shared/stringutils.cpp
     src/main.cpp
     src/RealDeviceManager.cpp
     src/rest/CoHttpServer.cpp

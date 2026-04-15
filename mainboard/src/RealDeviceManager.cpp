@@ -10,7 +10,7 @@
 #include <sys/time.h>
 #include <cerrno>
 #include "corocgo/corocgo.h"
-
+#include "stringutils.h"
 
 // ---------------------------------------------------------------------------
 // LinuxInputManager
@@ -156,7 +156,7 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
         }
         char newName[256] = "Unknown";
         linuxInput.readDeviceName(existing->fd, newName, sizeof(newName));
-        existing->deviceName = newName;
+        existing->deviceName = trimString(newName);
 
         int axisCount = static_cast<int>(existing->axes.getEntries().size());
         existing->deviceIdStr = generateDeviceKey(existing->vendorId, existing->productId,
@@ -181,7 +181,8 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     linuxInput.readDeviceName(fd, name, sizeof(name));
     linuxInput.closeFd(fd);
 
-    if (std::string(name).find("Motion") != std::string::npos) return nullptr;
+    std::string deviceName = trimString(name);
+    if (deviceName.find("Motion") != std::string::npos) return nullptr;
 
     RealDevice device;
     device.evdevPath  = path;
@@ -189,7 +190,7 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     device.productId  = id.product;
     device.serial     = std::to_string(id.version);
     device.usbPath    = path;
-    device.deviceName = name;
+    device.deviceName = deviceName;
 
     if (!openDevice(device)) {
         std::cerr << "[RealDeviceManager] Failed to open device: " << path << std::endl;
@@ -197,7 +198,7 @@ RealDevice* RealDeviceManager::registerDevice(const std::string& path) {
     }
 
     int axisCount = static_cast<int>(device.axes.getEntries().size());
-    device.deviceIdStr = generateDeviceKey(id.vendor, id.product, device.serial, path, name, axisCount);
+    device.deviceIdStr = generateDeviceKey(id.vendor, id.product, device.serial, path, deviceName, axisCount);
     device.deviceId    = nextDeviceId++;
     applyAxisRenames(device);
 
@@ -219,6 +220,7 @@ std::string RealDeviceManager::generateDeviceKey(uint16_t vendor, uint16_t produ
                                                   const std::string& name,
                                                   int axisCount) {
     std::ostringstream oss;
+    
     oss << std::hex << vendor << ":" << product << ":" << serial
         << ":" << name << ":" << std::dec << axisCount;
     std::string baseId = oss.str();
