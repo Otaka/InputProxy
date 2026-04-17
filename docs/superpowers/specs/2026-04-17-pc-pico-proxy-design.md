@@ -113,7 +113,36 @@ The existing UART→framer→rpcInCh bridge coroutine is modified (not replaced)
 
 ---
 
-### 4. RPI4 — ControlService (new, extracted from RestApi)
+### 4. Fragmentation Protocol
+
+REST responses can exceed the `SF_BUFFER_SIZE` (2 KB) StreamFramer frame limit. Rather than increasing the frame size (which wastes Pico RAM globally), large payloads are split into multiple frames using the existing unused `UserData` field in the StreamFramer header.
+
+**UserData field encoding (2 bytes, currently always 0):**
+```
+high byte: fragment index (0, 1, 2, ...)
+low byte:  flags — bit 0 = more_fragments (1 = more coming, 0 = last fragment)
+```
+
+**Request envelope** (frame payload, channel 2):
+```json
+{"id": 1, "method": "GET", "path": "/layers", "body": ""}
+```
+
+**Response envelope** (one frame per fragment):
+```json
+{"id": 1, "status": 200, "body": "...up to ~1900 bytes of JSON..."}
+```
+
+For a single-frame response: `UserData = 0x0000` (index 0, no more fragments).  
+For a multi-frame response: fragments 0..N-1 have `more_fragments=1`, fragment N has `more_fragments=0`.
+
+**Pico is completely unaware of fragmentation** — it forwards all channel 2 frames verbatim regardless of UserData content. Fragmentation is purely end-to-end between `CdcApi` (RPI4, sends fragments) and `ProxySerialPort` (Qt, reassembles by `id` field).
+
+The `id` field in the JSON envelope allows Qt to match response fragments to the original request, supporting a single in-flight request at a time (no pipelining needed).
+
+---
+
+### 6. RPI4 — ControlService (new, extracted from RestApi)
 
 **File:** `mainboard/src/rest/ControlService.h/.cpp`
 
@@ -127,7 +156,7 @@ Contains all business logic currently in `RestApi` handler lambdas:
 
 ---
 
-### 5. RPI4 — CdcApi (new)
+### 7. RPI4 — CdcApi (new)
 
 **File:** `mainboard/src/rest/CdcApi.h/.cpp`
 
@@ -143,13 +172,13 @@ One `CdcApi` instance per UART channel, created alongside the existing `UartMana
 {"status": 200, "body": "{...escaped json...}"}
 ```
 
-**Dispatch:** parses `method` + `path`, routes to the appropriate `ControlService` method, serializes result to JSON, sends response frame back on **the same `StreamFramer` instance** that delivered the request. This guarantees the response returns to the correct Pico (and thus the correct PC).
+**Dispatch:** parses `id` + `method` + `path`, routes to the appropriate `ControlService` method, serializes result to JSON. If the response body exceeds ~1900 bytes it is split into fragments; each fragment is sent as a separate channel 2 frame with `UserData` encoding the fragment index and `more_fragments` flag. All frames go back on **the same `StreamFramer` instance** that delivered the request, guaranteeing the response returns to the correct Pico (and thus the correct PC).
 
 **Ping support:** `{"method":"PING","path":"/ping","body":""}` → `{"status":200,"body":"pong"}` — used by Qt app for device identification.
 
 ---
 
-### 6. Qt Desktop App — ProxySerialPort (new)
+### 8. Qt Desktop App — ProxySerialPort (new)
 
 **File:** `Desktop/ProxySerialPort.h/.cpp`
 
@@ -175,6 +204,8 @@ bool isReady() const;
 Any error (read/write failure, port disappears, response timeout) → close port → back to `Scanning` immediately.
 
 Pending in-flight requests at disconnect receive `{"status": -1, "body": "disconnected"}` so callers never hang.
+
+**Reassembly:** Qt accumulates incoming channel 2 frames by `id`, checking `UserData` for `more_fragments`. Once the last fragment arrives, concatenates body chunks and resolves the request.
 
 **Baud rate:** configurable in app settings (default: 115200).
 
