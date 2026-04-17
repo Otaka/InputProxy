@@ -55,18 +55,57 @@ This device is always present. The HID or XInput device continues to use VID/PID
 
 ---
 
-### 3. Pico — CdcProxyCoroutine (new)
+### 3. Pico — CdcFramerLite (new)
 
-**File:** `Pico/src/CdcProxyCoroutine.h/.cpp`
+**File:** `Pico/src/CdcFramerLite.h`
 
-A single coroutine that runs for the lifetime of the Pico:
+A plain synchronous state machine class (no coroutines, no channels) that parses the same 12-byte StreamFramer wire format incrementally. Accepts one byte at a time via `feed(byte)`, returns `true` when a complete valid frame is ready. Caller reads frame via `data()`/`size()`, then calls `reset()`.
 
-- Reads raw bytes from USB CDC → feeds into a dedicated `StreamFramer` (CDC framer)
-- On channel 2 frame received from CDC framer → reframes onto UART `StreamFramer` channel 2
-- On channel 2 frame received from UART framer → reframes onto CDC framer → writes to USB CDC
-- Channel 0 frames on UART are ignored (handled by existing RPC coroutine)
+No internal coroutine — zero RAM overhead beyond the parse buffer (~2 KB for the frame). Used instead of a second `StreamFramer` to avoid spawning an extra coroutine.
 
-The UART `StreamFramer` reference is passed in at construction — `CdcProxyCoroutine` taps into it alongside the existing RPC handler.
+---
+
+### 4. Pico — CDC proxy coroutine (new, in mainPico.cpp)
+
+**+1 coroutine** added to `mainPico.cpp`. Handles all CDC I/O in a single loop:
+
+```
+CDC bytes in  →  CdcFramerLite  →  complete frame  →  reframe on UART channel 2  →  uartManager->sendData()
+cdcOutCh      →  tud_cdc_write() + flush
+```
+
+```cpp
+coro([]() {
+    CdcFramerLite parser;
+    while (true) {
+        // PC → RPI4: read CDC bytes, parse frames, forward to UART channel 2
+        if (tud_cdc_available()) {
+            uint8_t buf[64];
+            uint32_t n = tud_cdc_read(buf, sizeof(buf));
+            for (uint32_t i = 0; i < n; i++) {
+                if (parser.feed(buf[i])) {
+                    FramedPacket fp = framer->createPacket(2, parser.data(), parser.size());
+                    uartManager->sendData(fp.data, fp.size);
+                    parser.reset();
+                }
+            }
+        }
+        // RPI4 → PC: drain pending CDC output frames
+        while (cdcOutCh->canReceive()) {
+            auto fp = cdcOutCh->tryReceive();
+            tud_cdc_write(fp.data, fp.size);
+            tud_cdc_write_flush();
+        }
+        coro_yield();
+    }
+});
+```
+
+The existing UART→framer→rpcInCh bridge coroutine is modified (not replaced) to route by channel:
+- Channel 0 → `rpcInCh` (existing, unchanged)
+- Channel 2 → `cdcOutCh` (new `Channel<FramedPacket>`)
+
+**Net cost: +1 coroutine, +1 `Channel<FramedPacket> cdcOutCh`, +1 `CdcFramerLite` on the stack.**
 
 **Channel assignment:**
 - Channel 0: existing Pico↔RPI4 RPC (M2P/P2M, unchanged)
