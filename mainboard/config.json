@@ -33,7 +33,7 @@
             "Button 274": "Button Middle"
           }
         },
-        { "id": "4e53:5407:273:USB OPTICAL MOUSE :18", "assignedTo": "vidmouse",
+        { "id": "4e53:5407:273:USB OPTICAL MOUSE:18", "assignedTo": "vidmouse",
           "rename_axes": {
             "Button 272": "Button Left",  
             "Button 273": "Button Right",
@@ -74,7 +74,7 @@
             "Stick LZ": "TriggerLeft"
           }
         },
-        { "id": "81f:e401:272:USB gamepad           :16", "assignedTo": "vid3","rename_axes": {
+        { "id": "81f:e401:272:USB gamepad:16", "assignedTo": "vid3","rename_axes": {
             "Button 290": "ButtonA",  
             "Button 289": "ButtonB",
             "Button 291": "ButtonX",
@@ -104,6 +104,26 @@
     ],
 
     "layers": [
+        {
+            "id": "auto-fire",
+            "name": "Auto Fire (no button hold needed)",
+            "active": false,
+            "activation": {
+                "mode": "while_active",
+                "vid": "vid1",
+                "hotkey": "~ButtonXBOX"
+            },
+            "rules": [
+                {
+                    "type": "turbo",
+                    "vid": "vid1",
+                    "axis": "ButtonA",
+                    "on_ms": 60,
+                    "off_ms": 60,
+                    "condition": "always"
+                }
+            ]
+        },
         {
             "id": "base",
             "name": "Base Layer",

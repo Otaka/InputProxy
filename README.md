@@ -491,6 +491,15 @@ The `->` separator chains hotkey parts into a sequence. The first part must fire
 ```
 Hold BumperLeft, press Back, then press A.
 
+**Inclusive matching (`~` prefix):**
+```
+~ButtonBack
+~!ButtonBumperLeft+ButtonA
+```
+By default a hotkey uses **strict matching** — it fires only when the specified axes are active *and no other axes are active* (so `!Ctrl+A` will not fire while Alt is also held). Prefix the expression with `~` to use **inclusive matching**: the engine checks only the listed axes and ignores anything else that may be held simultaneously. The `~` applies to the entire expression including all sequence steps.
+
+Use this for gamepad layer-switching where the player may be holding action buttons at the same time as the layer hotkey.
+
 #### Action types
 
 **`emit_axis`** — set an axis on an output device:

@@ -14,11 +14,20 @@ using namespace corocgo;
 // Config parsing helpers
 // ---------------------------------------------------------------------------
 
-static std::vector<HotkeyPart> parseHotkeyString(const std::string& hotkey,
-                                                   const std::string& defaultVidId) {
+struct ParsedHotkey {
     std::vector<HotkeyPart> parts;
+    bool inclusive = false;
+};
+
+static ParsedHotkey parseHotkeyString(const std::string& hotkey,
+                                       const std::string& defaultVidId) {
+    ParsedHotkey result;
     std::vector<std::string> partStrs;
     std::string remaining = hotkey;
+    if (!remaining.empty() && remaining[0] == '~') {
+        result.inclusive = true;
+        remaining = remaining.substr(1);
+    }
     while (true) {
         auto pos = remaining.find("->");
         if (pos == std::string::npos) {
@@ -83,9 +92,9 @@ static std::vector<HotkeyPart> parseHotkeyString(const std::string& hotkey,
         for (const auto& m : part.modifiers) addVid(m.vidId);
         if (part.activationAxis) addVid(part.activationAxis->vidId);
 
-        parts.push_back(std::move(part));
+        result.parts.push_back(std::move(part));
     }
-    return parts;
+    return result;
 }
 
 static std::vector<std::unique_ptr<Action>> buildActions(const std::vector<ConfAction>& actions) {
@@ -193,7 +202,9 @@ void MappingManager::load(const ConfRoot& config, EmulatedDeviceManager* edm_) {
             } else if (rc.type == ConfRuleType::Hotkey) {
                 AxisRule rule;
                 rule.propagate   = rc.propagate;
-                rule.hotkeyParts = parseHotkeyString(rc.hotkey, vidId);
+                auto parsed      = parseHotkeyString(rc.hotkey, vidId);
+                rule.hotkeyParts = std::move(parsed.parts);
+                rule.exclusive   = !parsed.inclusive;
                 rule.pressActions   = buildActions(rc.pressActions);
                 rule.releaseActions = buildActions(rc.releaseActions);
                 layer.rules.push_back(std::move(rule));
@@ -245,8 +256,9 @@ void MappingManager::load(const ConfRoot& config, EmulatedDeviceManager* edm_) {
             if (!act.hotkey.empty() && !act.vid.empty()) {
                 auto rule = std::make_unique<AxisRule>();
                 rule->propagate  = false;
-                rule->exclusive  = true;
-                rule->hotkeyParts = parseHotkeyString(act.hotkey, act.vid);
+                auto parsed      = parseHotkeyString(act.hotkey, act.vid);
+                rule->hotkeyParts = std::move(parsed.parts);
+                rule->exclusive  = !parsed.inclusive;
                 layer.activationRule = std::move(rule);
             }
         }

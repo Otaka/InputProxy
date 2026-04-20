@@ -259,7 +259,7 @@ static std::string resolveAxisName(const std::string& deviceIdStr, int axisIndex
 void logRealDeviceEvent(AxisEvent&event) {
     bool printEvent=false;
     bool printAxisStringName=false;
-    if(printEvent){
+    if(printEvent) {
         std::cout<<"Event="<<event.deviceIdStr<<" axisIndex="<<event.axisIndex;
         if(printAxisStringName){
             std::cout<<"("<<resolveAxisName(event.deviceIdStr, event.axisIndex)<<")";
