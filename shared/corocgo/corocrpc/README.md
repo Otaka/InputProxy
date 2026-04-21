@@ -227,8 +227,9 @@ coro([&framer]() {
         auto res = framer.readCh->receive();
         if (res.error) break;
         FramedPacket& fp = res.value;
-        const uint8_t* content = fp.getData();      // pointer to content (past header)
-        uint16_t contentLen    = fp.getDataSize();  // content length (excluding header)
+        // content starts at fp.data + StreamFramer::HEADER_SIZE
+        const uint8_t* content = fp.data + StreamFramer::HEADER_SIZE;
+        uint16_t contentLen    = fp.size  - StreamFramer::HEADER_SIZE;
         // fp.channel holds the logical channel number
     }
 });
@@ -266,10 +267,14 @@ coro([&framer, rpcInCh]() {
     while (true) {
         auto res = framer.readCh->receive();
         if (res.error) break;
+        FramedPacket& fp = res.value;
         RpcPacket pkt;
-        pkt.size = res.value.getDataSize();
-        memcpy(pkt.data, res.value.getData(), pkt.size);
-        rpcInCh->send(pkt);
+        uint16_t contentLen = fp.size - StreamFramer::HEADER_SIZE;
+        if (contentLen <= sizeof(pkt.data)) {
+            memcpy(pkt.data, fp.data + StreamFramer::HEADER_SIZE, contentLen);
+            pkt.size = contentLen;
+            rpcInCh->send(pkt);
+        }
     }
 });
 
@@ -313,6 +318,98 @@ delete inCh;
 ```
 
 The `RpcManager` internal coroutines observe `inCh->isClosed()` and exit on their next wake cycle (dispatch loop immediately, timeout loop within 1 second).
+
+---
+
+---
+
+## Streaming Mode
+
+Enable with `#define COROCRPC_STREAMING` (or `-DCOROCRPC_STREAMING` on the compiler command line / Xcode preprocessor macros).
+
+Streaming transfers arbitrarily large payloads that exceed the 1 KB `RpcArg` limit. Data flows as 512-byte chunks with receiver-driven flow control — the receiver signals readiness before each chunk so the sender never blocks the transport. A `corocgo::sleep(0)` yield after every chunk keeps regular `call()` latency unaffected.
+
+### Registering a streaming method (server side)
+
+The handler runs in its own spawned coroutine, so a slow transfer never delays regular RPC dispatch.
+
+```cpp
+rpc.registerStreamedMethod(METHOD_ID, [](RpcStreamServer& s) {
+    // ── Receive phase ──────────────────────────────────────────
+    std::vector<uint8_t> received;
+    uint8_t chunk[512];
+    while (true) {
+        RpcStreamState st = s.waitReadyReceive();   // sends READY, then waits for chunk
+        if (st == RpcStreamState::RECEIVE_FINISH) break;
+        if (st != RpcStreamState::RECEIVE_READY)  return;  // abort/timeout
+        int n = s.receive(chunk, sizeof(chunk));
+        received.insert(received.end(), chunk, chunk + n);
+    }
+
+    // ── Send phase ─────────────────────────────────────────────
+    // process received data, then send response
+    s.sendAll(responseData, responseSize);  // helper: loops chunks + finishSend
+});
+```
+
+### Making a streaming call (client side)
+
+```cpp
+RpcStreamClient sh = rpc.callStreamed(METHOD_ID);  // must run from a coroutine
+
+// Send a large buffer
+sh.sendAll(requestData, requestSize);
+
+// Receive the response
+std::vector<uint8_t> response = sh.receiveAll();
+```
+
+### Manual chunk loop (for progress tracking or partial reads)
+
+```cpp
+RpcStreamClient sh = rpc.callStreamed(METHOD_ID);
+
+// Send phase
+int offset = 0;
+while (offset < totalSize) {
+    if (sh.waitReadySend() != RpcStreamState::SEND_READY) return;  // abort/timeout
+    offset += sh.send(buf, totalSize, offset);  // sends up to 512 bytes, returns count
+}
+sh.finishSend();
+
+// Receive phase
+uint8_t chunk[512];
+while (true) {
+    RpcStreamState st = sh.waitReadyReceive();
+    if (st == RpcStreamState::RECEIVE_FINISH) break;
+    if (st != RpcStreamState::RECEIVE_READY)  break;  // abort/timeout
+    int n = sh.receive(chunk, sizeof(chunk));
+    // ... process chunk ...
+}
+```
+
+### RpcStreamState values
+
+| Value | Meaning |
+|---|---|
+| `SEND_READY` | Receiver sent READY — call `send()` |
+| `RECEIVE_READY` | Data chunk arrived — call `receive()` |
+| `RECEIVE_FINISH` | Sender called `finishSend()` — no more data |
+| `ABORTED` | Either side called `cancel()`, or an ABORT packet arrived |
+| `TIMEOUT` | Wait exceeded the timeout |
+
+### Cancellation
+
+Either side may call `cancel()` at any point. The other side's next `wait*()` call returns `ABORTED`.
+
+### Build with streaming enabled
+
+```bash
+clang++ -std=c++17 -DCOROCRPC_STREAMING corocgo.cpp corocrpc.cpp corocrpc_example.cpp -o test_rpc
+./test_rpc
+```
+
+In Xcode: **Build Settings → Preprocessor Macros → add `COROCRPC_STREAMING`**.
 
 ---
 
